@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <!-- UA-177608645-1 is a Universal Analytics property; UA stopped processing
+       data in July 2023. Ask whether the alumni association wants a GA4
+       property before removing this, or leave it inert. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-177608645-1"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'UA-177608645-1');
+
+  </script>
+  <meta charset="utf-8">
+  <title>Olin Banter</title>
+  <meta name="description" content="Information on the Banter program of Olin College">
+  <meta property="og:image" content="https://olinalumni.org/img/olin_logo_512.png" />
+  <meta property="og:title" content="Olin Banter" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="http://olinalumni.org/resources/banter" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="//netdna.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" rel="stylesheet">
+  <link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.min.css" rel="stylesheet">
+  <link href="https://olinalumni.org/css/style.css" rel="stylesheet">
+  <link href="css/banterstyle.css" rel="stylesheet">
+
+  <!-- Fav and touch icons -->
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="https://olinalumni.org/img/olin_logo_144.png">
+  <link rel="apple-touch-icon-precomposed" sizes="114x114" href="https://olinalumni.org/img/olin_logo_114.png">
+  <link rel="apple-touch-icon-precomposed" sizes="72x72" href="https://olinalumni.org/img/olin_logo_72.png">
+  <link rel="apple-touch-icon-precomposed" href="https://olinalumni.org/img/olin_logo_57.png">
+  <link rel="shortcut icon" href="https://olinalumni.org/img/favicon.ico">
+  <!-- Script Imports -->
+  <script src="https://code.jquery.com/jquery-1.11.2.min.js"></script>
+  <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+</head>
+
+<body>
+  <nav class="navbar navbar-default" role="navigation">
+    <div class="container">
+      <!-- Brand and toggle get grouped for better mobile display -->
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#collapse-nav">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="#">Olin Banter</a>
+      </div>
+
+      <!-- Collect the nav links, forms, and other content for toggling -->
+      <div id="collapse-nav" class="collapse navbar-collapse">
+        <ul class="nav navbar-nav">
+          <li><a href="#intro">Intro</a></li>
+          <li><a href="#matches">Sign Up!</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="admin/">Admin</a></li>
+        </ul>
+      </div><!-- /.navbar-collapse -->
+    </div><!-- /.container -->
+  </nav>
+
+  <div class="container">
+
+    <!-- Intro -->
+    <div id="intro" class="section-panel">
+      <div class="row">
+        <div class="col-sm-12">
+          <h2>Banter</h2>
+          <h4>TL;DR.</h4>
+          <p>Meet an <strong>Olin alum</strong>. Find an <strong>awesome mentor</strong>. Discuss life at Olin, how to
+            adult, what you did last week, and everything in between. Hindsight is 20/20! Borrow some perspective from
+            someone who's been there. We match you with a mentor that you meet each month on video for the academic
+            year.</p>
+          <br /><br />
+          <h4>more...</h4>
+          <p>Banter is a mentoring program that connects Oliners&mdash;who better to help out than someone who's been
+            there?</p>
+          <p>The program provides professional and personal support to students and alumni. We encourage meetings to
+            happen on a regular cadence and suggest once a month (video chat, phone call, in person meeting, or email
+            conversation) though it’s up to each match to determine what works best for them.
+          <p>
+
+          <p><strong>Alumni:</strong> You have the opportunity to reconnect inside the Olin bubble and share your
+            professional and personal experiences with students and fellow alumni.</p>
+
+          <p><strong>Students:</strong> You have exclusive access to a network of Olin alumni ready to share their
+            experiences from life on campus and beyond. Get advice on which courses are most helpful when you have no
+            idea what field to go into, how to deal with that difficult teammate, the politics of an internship or how
+            to cope with the challenges of learning today.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Surveys and News -->
+    <div id="matches" class="section-panel">
+      <div class="row">
+        <div class="col-sm-12">
+          <h2>Sign up timeline</h2>
+          <div class="table-responsive">
+            <table id="timeline" class="pure-table pure-table-bordered" aria-busy="true">
+              <caption class="sr-only">Banter sign-up deadlines</caption>
+              <thead>
+                <tr><th scope="col">Date</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Loading this year's dates&hellip;</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <script type="module">
+            import { loadCycle, renderTimeline, renderTimelineError } from './js/banter.js';
+            const table = document.getElementById('timeline');
+            loadCycle().then((cycle) => renderTimeline(table, cycle))
+              .catch((err) => renderTimelineError(table, err));
+          </script>
+        </div>
+      </div>
+    </div>
+    <!-- FAQ -->
+    <div id="faq" class="section-panel">
+      <div class="row">
+        <div class="col-sm-12">
+          <h2>FAQ</h2>
+          
+          <p>
+            <h5>How does participation work? Who can participate?</h5>
+            </p>
+            <p> Current students as well as Alumni from 2022-2025 can be mentees. Alumni from years 2006-2021 can be mentors.
+              <br />
+            </p>
+          
+          <p>
+          <h5>I’m a current student. Do I have to know what I want to do after Olin?</h5>
+          </p>
+          <p> Nope, but you should indicate on your slide that you don’t know your post-grad plans. How many people even
+            know what they want to do next week? We don’t require you to know the future, but any questions you may have
+            regarding life after Olin will certainly serve to enrich the conversation!</p>
+          <p>
+          <h5>How do pairs communicate? What do they talk about?</h5>
+          </p>
+          <p> Most pairs video chat, but it will be up to each match to establish a monthly time and communication
+            format that will work for them. We will provide encouragement and monthly topics that can be used as
+            conversation starters. Each pair will set the tone for their meetings, but you should be thinking "coffee
+            with a friend" rather than "business interview."</p>
+          <p>
+          <h5>How long is the program? What is the time commitment?</h5>
+          </p>
+          <p> You’ll be getting your match in October and we’ll be checking in with you through the end of the academic year, but we hope you’ll
+            keep in touch after Banter officially ends for the year. Expect to set aside a half hour per month to meet or
+            communicate with your match.</p>
+          
+          <p>
+          <h5>How are the pairings made?</h5>
+          </p>
+          <p> Step 1: fill out the survey
+            <br />Step 2: we send out slides highlighting each mentor, generated from the survey
+            <br />Step 3: mentees read through profiles and excellence vote on who they would like to be paired with
+            <br />Step 4: we optimize the pairings
+            <br />Step 5: we send out introductory slides and emails to the matches
+            <br />Step 6: Banter! We send out monthly topics for conversation inspiration
+          </p>
+          <p>
+          <h5>Will I only be connected to 1 person the whole year?</h5>
+          </p>
+          <p> Each match persists for one year and will be the primary person you’re talking with.</p>
+		  <p> For the 2025-2026 cycle, we'll be experimenting with a new opt-in small group format where mentees and mentors can choose to participate in a 1 mentor: multiple mentees small group </p>
+          <br>
+          <h5>Help! My match hasn't responded to any of my emails requesting to set up our first meeting!</h5>
+          </p>
+          <p> If you haven't heard from your match by the deadline to set up your first call, reach out ASAP to banter@olin.edu and they'll either try to reach out to that person for you, or set you up with a new match.</p>
+          <br><br>
+          <p> This program is brought to you by: Lillian Tseng (‘13) and Sara Wheeland (‘07) </p>
+          <p> Have additional questions for us? Feel free to contact us! </p>
+
+          <!-- Add font awesome icons -->
+          <a href="https://www.facebook.com/groups/olinbanter" class="fa fa-facebook"></a>
+          <a href="mailto:banter@olin.edu" class="fa fa-envelope"></a>
+
+        </div>
+      </div>
+    </div>
+
+
+
+
+
+    <div class="row">
+      <div class="col-xs-12">
+        <hr>
+        <p id="footer" class="text-muted"><small>By the Olin Alumni Association. Contact <a
+              href="http://grgmrr.com">Greg Marra</a>. Code <a
+              href="https://github.com/olinalumni/olinalumni.github.io">on GitHub</a>.</small></p>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>
