@@ -901,7 +901,7 @@
     if (hasEmails) {
       const PAGE = 1000;
       for (let from = 0; !lookupError; from += PAGE) {
-        const { data, error } = await sb.from('survey_responses').select('id,email,cohort').range(from, from + PAGE - 1);
+        const { data, error } = await sb.from('survey_responses').select('id,email,cohort').order('id').range(from, from + PAGE - 1);
         if (error) { lookupError = error; break; }
         people.push(...data);
         if (data.length < PAGE) break;
