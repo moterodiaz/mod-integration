@@ -455,6 +455,7 @@
       splits.push([m, {
         date: m.date,
         end: m.end,
+        display: m.display,
         cells: cells.map((c) => (cohortFromHref(c.href) === audience ? c : {})),
       }]);
       m.cells = cells.map((c) => (cohortFromHref(c.href) === audience ? {} : c));
@@ -466,6 +467,7 @@
     // Close derives from the *latest* linked row, so the edit must reach every
     // row that could keep the window in its current state — not just the last.
     linked.forEach((row, i) => edit(row, i === 0));
+    cycle.milestones.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
     const updated = { ...cycle, deadlines: deriveDeadlines(cycle.milestones, cycle.deadlines || {}) };
     const { data, error } = await sb.from('site_config').update({ value: updated, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
     if (error || !data?.length) { status.textContent = `Could not save: ${error?.message || 'no config row was updated'}`; return; }
@@ -909,28 +911,18 @@
     const emails = [...new Set(rows.slice(1)
       .flatMap((r) => [r[col('mentor_email')], r[col('mentee_email')]])
       .map((e) => (e || '').trim().toLowerCase()).filter(Boolean))];
-    // `.in()` is case-sensitive, so it resolves only lowercase-stored
-    // addresses — but it is indexed and cheap, so it runs first. Addresses
-    // still unresolved may be stored mixed-case; page the table for just
-    // those rather than fetching every application for every import.
+    // `.in()` is case-sensitive, so it misses mixed-case stored addresses —
+    // including duplicates that should trip the ambiguity check below.
+    // `ilike` with every wildcard char escaped is a case-insensitive exact
+    // match; chunking keeps the or() URL bounded for large CSVs.
+    const like = (e) => `email.ilike."${e.replace(/\\/g, '\\\\').replace(/["%_]/g, (c) => `\\${c}`)}"`;
     const people = [];
     let lookupError = null;
-    if (emails.length) {
-      const { data, error } = await sb.from('survey_responses').select('id,email,cohort').in('email', emails);
+    for (let i = 0; !lookupError && i < emails.length; i += 50) {
+      const { data, error } = await sb.from('survey_responses').select('id,email,cohort')
+        .or(emails.slice(i, i + 50).map(like).join(','));
       if (error) lookupError = error;
-      else {
-        people.push(...data);
-        const matched = new Set(data.map((p) => (p.email || '').toLowerCase()));
-        const unresolved = new Set(emails.filter((e) => !matched.has(e)));
-        const PAGE = 1000;
-        for (let from = 0; unresolved.size && !lookupError; from += PAGE) {
-          const { data: page, error: pageError } = await sb.from('survey_responses')
-            .select('id,email,cohort').order('id').range(from, from + PAGE - 1);
-          if (pageError) { lookupError = pageError; break; }
-          for (const p of page) if (unresolved.has((p.email || '').toLowerCase())) people.push(p);
-          if (page.length < PAGE) break;
-        }
-      }
+      else people.push(...data);
     }
     if (lookupError) { status.textContent = `Couldn't validate: ${lookupError.message}`; return; }
     const byEmail = new Map();
