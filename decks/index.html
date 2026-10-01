@@ -40,7 +40,7 @@
   </p>
 </main>
 <script type="module">
-  import { SUPABASE_URL, ANON_KEY } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, SAFE_HREF } from '../js/banter.js';
 
   const status = document.getElementById('status');
   const list = document.getElementById('deck-list');
@@ -68,6 +68,7 @@
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.className = 'deck-link';
+        if (!SAFE_HREF.test(d.url || '')) continue;
         a.href = d.url;
         a.download = '';
         a.textContent = d.name;

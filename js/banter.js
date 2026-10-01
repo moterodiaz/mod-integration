@@ -15,18 +15,29 @@ export const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 // a link, rather than keeping a second copy of the pattern in sync by hand.
 export const SAFE_HREF = /^(https?:|\/|mailto:)/;
 
-// Verbatim from the original inline script (index.html), which compared a
-// hand-authored 'YYYYMMDD-YYYYMMDD' className to today's integer date.
-function pad(d) {
-  const dd = d.toString();
-  return dd.length === 1 ? '0' + dd : dd;
-}
-function getIntDate() {
-  const d = new Date();
-  return parseInt(pad(d.getFullYear()) + pad(d.getMonth() + 1) + pad(d.getDate()), 10);
-}
-function intDate(iso) {
-  return parseInt(iso.replace(/-/g, ''), 10);
+export const todayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+export function deriveDeadlines(milestones, prev = {}) {
+  const derived = {};
+  for (const m of milestones || []) {
+    const date = m.date;
+    for (const cell of m.cells || []) {
+      const match = cell.href?.match(/\/apply\/?\?cohort=([a-z_]+)/);
+      if (!match) continue;
+      const role = match[1];
+      const d = derived[role] || (derived[role] = {});
+      if (m.end) d.open = !d.open || date < d.open ? date : d.open;
+      d.close = !d.close || (m.end || date) > d.close ? (m.end || date) : d.close;
+    }
+  }
+  for (const [role, deadlines] of Object.entries(prev)) {
+    if (!derived[role]) derived[role] = deadlines;
+  }
+  for (const role of Object.keys(derived)) {
+    if (derived[role] && prev[role]) derived[role].open ??= prev[role].open;
+  }
+  if (derived.mentor_alums) derived.alumni = derived.mentor_alums;
+  return derived;
 }
 
 function ordinal(n) {
@@ -78,8 +89,8 @@ export function renderTimeline(table, cycle) {
     headRow.appendChild(th);
   }
 
-  const today = getIntDate();
-  const currentIdx = cycle.milestones.findIndex((m) => intDate(m.date) >= today);
+  const today = todayET();
+  const currentIdx = cycle.milestones.findIndex((m) => (m.end || m.date) >= today);
 
   cycle.milestones.forEach((m, i) => {
     const tr = tbody.insertRow();
@@ -87,7 +98,7 @@ export function renderTimeline(table, cycle) {
     else if (i === currentIdx) tr.className = 'current';
 
     const dateCell = tr.insertCell();
-    dateCell.textContent = m.display || formatDate(m.date);
+    dateCell.textContent = m.display || `${formatDate(m.date)}${m.end ? ` – ${formatDate(m.end)}` : ''}`;
 
     for (let c = 0; c < cycle.columns.length; c++) {
       const cell = m.cells[c] || {};
@@ -129,4 +140,34 @@ export function renderTimelineError(table, err) {
   details.append(summary, code);
   td.appendChild(details);
   table.setAttribute('aria-busy', 'false');
+}
+
+
+export function renderFaq(container, cycle) {
+  if (!cycle.faq?.length) return;
+  container.replaceChildren();
+  function appendText(parent, text) {
+    const pattern = /(https?:\/\/[^\s]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g;
+    let last = 0;
+    for (const match of text.matchAll(pattern)) {
+      parent.append(document.createTextNode(text.slice(last, match.index)));
+      let value = match[0].replace(/["'>.,!?;:]+$/, '');
+      while ((value.match(/\)/g) || []).length > (value.match(/\(/g) || []).length) value = value.slice(0, -1);
+      const href = value.includes('@') ? `mailto:${value}` : value;
+      if (SAFE_HREF.test(href)) { const a = document.createElement('a'); a.href = href; a.textContent = value; parent.append(a); }
+      else parent.append(document.createTextNode(value));
+      parent.append(document.createTextNode(match[0].slice(value.length)));
+      last = match.index + match[0].length;
+    }
+    parent.append(document.createTextNode(text.slice(last)));
+  }
+  for (const item of cycle.faq) {
+    const h = document.createElement('h5'); h.textContent = item.q || ''; container.append(h);
+    for (const paragraph of (item.a || '').split(/\n\s*\n/).filter(Boolean)) {
+      const p = document.createElement('p'); appendText(p, paragraph); container.append(p);
+    }
+  }
+  for (const paragraph of (cycle.faq_footer || '').split(/\n\s*\n/).filter(Boolean)) {
+    const p = document.createElement('p'); appendText(p, paragraph); container.append(p);
+  }
 }

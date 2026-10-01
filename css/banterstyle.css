@@ -25,3 +25,5 @@ table{border-collapse:collapse;border-spacing:0;max-width:685px;margin:auto;}
   background: #55ACEE;
   color: white;
 }
+
+#faq-body p { white-space: pre-line; }

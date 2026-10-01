@@ -94,7 +94,7 @@
   </form>
 </main>
 <script type="module">
-  import { SUPABASE_URL, ANON_KEY, loadCycle } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, loadCycle, todayET } from '../js/banter.js';
 
   const form = document.getElementById('signup-form');
   const status = document.getElementById('status');
@@ -138,7 +138,7 @@
       closedNotice.style.display = 'none';
       return true;
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayET();
     const isOpen = (!d.open || today >= d.open) && (!d.close || today <= d.close);
     form.hidden = !isOpen;
     closedNotice.style.display = isOpen ? 'none' : 'block';

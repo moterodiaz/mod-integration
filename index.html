@@ -3,25 +3,13 @@
 
 <head>
 
-  <!-- Global site tag (gtag.js) - Google Analytics -->
-  <!-- UA-177608645-1 is a Universal Analytics property; UA stopped processing
-       data in July 2023. Ask whether the alumni association wants a GA4
-       property before removing this, or leave it inert. -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-177608645-1"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
-    gtag('config', 'UA-177608645-1');
-
-  </script>
   <meta charset="utf-8">
   <title>Olin Banter</title>
   <meta name="description" content="Information on Banter, the Olin Alumni Association's mentoring program">
   <meta property="og:image" content="https://olinalumni.org/img/olin_logo_512.png" />
   <meta property="og:title" content="Olin Banter" />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://moterodiaz.github.io/mod-integration/" />
+  <meta property="og:url" content="https://olinalumni.github.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="//netdna.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" rel="stylesheet">
@@ -115,9 +103,10 @@
             </table>
           </div>
           <script type="module">
-            import { loadCycle, renderTimeline, renderTimelineError } from './js/banter.js';
+            import { loadCycle, renderTimeline, renderTimelineError, renderFaq } from './js/banter.js';
             const table = document.getElementById('timeline');
-            loadCycle().then((cycle) => renderTimeline(table, cycle))
+            const faqBody = document.getElementById('faq-body');
+            loadCycle().then((cycle) => { renderTimeline(table, cycle); renderFaq(faqBody, cycle); return cycle; })
               .catch((err) => renderTimelineError(table, err));
           </script>
         </div>
@@ -128,37 +117,28 @@
       <div class="row">
         <div class="col-sm-12">
           <h2>FAQ</h2>
+          <div id="faq-body">
           
-          <p>
-            <h5>How does participation work? Who can participate?</h5>
-            </p>
+          <h5>How does participation work? Who can participate?</h5>
             <p> Current students as well as Alumni from 2022-2025 can be mentees. Alumni from years 2006-2021 can be mentors.
               <br />
             </p>
           
-          <p>
           <h5>I’m a current student. Do I have to know what I want to do after Olin?</h5>
-          </p>
           <p> Nope, but you should indicate on your slide that you don’t know your post-grad plans. How many people even
             know what they want to do next week? We don’t require you to know the future, but any questions you may have
             regarding life after Olin will certainly serve to enrich the conversation!</p>
-          <p>
           <h5>How do pairs communicate? What do they talk about?</h5>
-          </p>
           <p> Most pairs video chat, but it will be up to each match to establish a monthly time and communication
             format that will work for them. We will provide encouragement and monthly topics that can be used as
             conversation starters. Each pair will set the tone for their meetings, but you should be thinking "coffee
             with a friend" rather than "business interview."</p>
-          <p>
           <h5>How long is the program? What is the time commitment?</h5>
-          </p>
           <p> You’ll be getting your match in October and we’ll be checking in with you through the end of the academic year, but we hope you’ll
             keep in touch after Banter officially ends for the year. Expect to set aside a half hour per month to meet or
             communicate with your match.</p>
           
-          <p>
           <h5>How are the pairings made?</h5>
-          </p>
           <p> Step 1: fill out the survey
             <br />Step 2: we send out slides highlighting each mentor, generated from the survey
             <br />Step 3: mentees read through profiles and excellence vote on who they would like to be paired with
@@ -166,22 +146,19 @@
             <br />Step 5: we send out introductory slides and emails to the matches
             <br />Step 6: Banter! We send out monthly topics for conversation inspiration
           </p>
-          <p>
           <h5>Will I only be connected to 1 person the whole year?</h5>
-          </p>
           <p> Each match persists for one year and will be the primary person you’re talking with.</p>
 		  <p> For the 2025-2026 cycle, we'll be experimenting with a new opt-in small group format where mentees and mentors can choose to participate in a 1 mentor: multiple mentees small group </p>
           <br>
           <h5>Help! My match hasn't responded to any of my emails requesting to set up our first meeting!</h5>
-          </p>
           <p> If you haven't heard from your match by the deadline to set up your first call, reach out ASAP to banter@olin.edu and they'll either try to reach out to that person for you, or set you up with a new match.</p>
-          <br><br>
           <p> This program is brought to you by: Lillian Tseng (‘13) and Sara Wheeland (‘07) </p>
           <p> Have additional questions for us? Feel free to contact us! </p>
 
           <!-- Add font awesome icons -->
           <a href="https://www.facebook.com/groups/olinbanter" class="fa fa-facebook"></a>
           <a href="mailto:banter@olin.edu" class="fa fa-envelope"></a>
+          </div>
 
         </div>
       </div>
@@ -196,7 +173,7 @@
         <hr>
         <p id="footer" class="text-muted"><small>By the Olin Alumni Association. Contact <a
               href="https://github.com/moterodiaz">Mateo Otero-Diaz</a>. Code <a
-              href="https://github.com/moterodiaz/mod-integration">on GitHub</a>.</small></p>
+              href="https://github.com/olinalumni/olinalumni.github.io">on GitHub</a>.</small></p>
       </div>
     </div>
   </div>

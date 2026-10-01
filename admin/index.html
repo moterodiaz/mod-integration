@@ -93,39 +93,12 @@
       <div><label for="col-2">Column 3 header</label><input id="col-2" type="text"></div>
     </div>
 
-    <h3>Application windows</h3>
-    <p>Each role has its own open and close date for the <a href="../apply/">apply form</a>. The
-      server enforces these dates, not just the browser. Leave a field blank to remove that restriction.
-      "Alumni mentor" also covers the general alumni mentor pool.</p>
-    <div class="deadline-groups">
-      <div class="deadline-group">
-        <h4>Alumni mentor</h4>
-        <div class="deadline-fields">
-          <div><label for="dl-mentor_alums-open">Opens</label><input id="dl-mentor_alums-open" type="date"></div>
-          <div><label for="dl-mentor_alums-close">Closes</label><input id="dl-mentor_alums-close" type="date"></div>
-        </div>
-      </div>
-      <div class="deadline-group">
-        <h4>Student mentee</h4>
-        <div class="deadline-fields">
-          <div><label for="dl-students-open">Opens</label><input id="dl-students-open" type="date"></div>
-          <div><label for="dl-students-close">Closes</label><input id="dl-students-close" type="date"></div>
-        </div>
-      </div>
-      <div class="deadline-group">
-        <h4>Recent alumni mentee</h4>
-        <div class="deadline-fields">
-          <div><label for="dl-young_alums-open">Opens</label><input id="dl-young_alums-open" type="date"></div>
-          <div><label for="dl-young_alums-close">Closes</label><input id="dl-young_alums-close" type="date"></div>
-        </div>
-      </div>
-    </div>
-
     <div class="table-responsive">
       <table id="editor-table">
         <thead>
           <tr>
             <th>Date</th>
+            <th>End date</th>
             <th>Display override</th>
             <th>Column 1</th>
             <th>Column 2</th>
@@ -137,6 +110,9 @@
       </table>
     </div>
     <p><button id="add-row" type="button" class="secondary">Add milestone</button></p>
+    <h3>FAQ</h3><div id="faq-editor"></div>
+    <p><button id="add-faq" type="button" class="secondary">Add FAQ</button></p>
+    <label for="faq-footer">FAQ credit and contact text</label><textarea id="faq-footer" rows="3"></textarea>
 
     <p class="row-inline">
       <button id="save-cycle" type="button">Save</button>
@@ -263,7 +239,7 @@
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines } from '../js/banter.js';
 
   const sb = createClient(SUPABASE_URL, ANON_KEY);
   const CYCLE_KEY = 'banter_cycle';
@@ -331,12 +307,13 @@
     const cells = m.cells || [{}, {}, {}];
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="date" class="m-date" value="${String(m.date || '').replace(/"/g, '&quot;')}"></td>
-      <td><input type="text" class="m-display" value="${(m.display || '').replace(/"/g, '&quot;')}" placeholder="e.g. ~Monthly through May"></td>
+      <td><input type="date" class="m-date" value="${String(m.date || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></td>
+      <td><input type="date" class="m-end" value="${String(m.end || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></td>
+      <td><input type="text" class="m-display" value="${(m.display || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" placeholder="e.g. ~Monthly through May"></td>
       ${[0, 1, 2].map((i) => `
         <td>
-          <input type="text" class="m-label" data-col="${i}" value="${(cells[i]?.label || '').replace(/"/g, '&quot;')}" placeholder="label">
-          <input type="url" class="m-href" data-col="${i}" value="${(cells[i]?.href || '').replace(/"/g, '&quot;')}" placeholder="optional link">
+          <input type="text" class="m-label" data-col="${i}" value="${(cells[i]?.label || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" placeholder="label">
+          <input type="url" class="m-href" data-col="${i}" value="${(cells[i]?.href || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" placeholder="optional link">
         </td>`).join('')}
       <td><button type="button" class="remove">Remove</button></td>
     `;
@@ -345,30 +322,24 @@
   }
 
   document.getElementById('add-row').addEventListener('click', () => addRow());
-
-  const DEADLINE_ROLES = ['mentor_alums', 'students', 'young_alums'];
-
-  function readDeadlines() {
-    const deadlines = {};
-    for (const role of DEADLINE_ROLES) {
-      const open = document.getElementById(`dl-${role}-open`).value;
-      const close = document.getElementById(`dl-${role}-close`).value;
-      const d = {};
-      if (open) d.open = open;
-      if (close) d.close = close;
-      if (Object.keys(d).length) deadlines[role] = d;
-    }
-    // "alumni" is the general mentor pool, not a role exposed in the apply
-    // form's own selector — it shares the alumni-mentor window rather than
-    // needing its own pair of inputs here.
-    if (deadlines.mentor_alums) deadlines.alumni = deadlines.mentor_alums;
-    return deadlines;
+  const faqEditor = document.getElementById('faq-editor');
+  function addFaq(item = {}) {
+    const row = document.createElement('div'); row.className = 'faq-row';
+    const q = document.createElement('input'); q.className = 'faq-q'; q.placeholder = 'Question'; q.value = item.q || '';
+    const a = document.createElement('textarea'); a.className = 'faq-a'; a.placeholder = 'Answer'; a.value = item.a || '';
+    for (const [label, action] of [['↑', -1], ['↓', 1]]) { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', () => { const sibling = row[action < 0 ? 'previousElementSibling' : 'nextElementSibling']; if (sibling) faqEditor.insertBefore(row, action < 0 ? sibling : sibling.nextSibling); }); row.append(b); }
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove'; remove.addEventListener('click', () => row.remove());
+    row.prepend(q, a); row.append(remove); faqEditor.append(row);
   }
+  document.getElementById('add-faq').addEventListener('click', () => addFaq());
+  function readFaqForm() { return [...faqEditor.querySelectorAll('.faq-row')].map((r) => ({ q: r.querySelector('.faq-q').value.trim(), a: r.querySelector('.faq-a').value.trim() })).filter((item) => item.q || item.a); }
+
 
   function readCycleForm() {
     const columns = [0, 1, 2].map((i) => document.getElementById(`col-${i}`).value.trim());
     const milestones = [...editorRows.querySelectorAll('tr')].map((tr) => ({
       date: tr.querySelector('.m-date').value,
+      end: tr.querySelector('.m-end').value || undefined,
       display: tr.querySelector('.m-display').value.trim() || undefined,
       cells: [0, 1, 2].map((i) => {
         const label = tr.querySelector(`.m-label[data-col="${i}"]`).value.trim();
@@ -380,7 +351,8 @@
     return {
       year: Number(document.getElementById('cycle-year').value),
       columns,
-      deadlines: readDeadlines(),
+      faq: readFaqForm(),
+      faq_footer: document.getElementById('faq-footer').value,
       milestones: milestones.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')),
     };
   }
@@ -390,16 +362,11 @@
     for (let i = 0; i < cycle.milestones.length; i++) {
       const m = cycle.milestones[i];
       if (!m.date) return `Row ${i + 1}: pick a date.`;
+      if (m.end && m.end < m.date) return `Row ${i + 1}: end date must be on or after the start date.`;
       for (const cell of m.cells) {
         if (cell.href && !SAFE_HREF.test(cell.href)) {
           return `Row ${i + 1}: that link doesn't look like a valid URL.`;
         }
-      }
-    }
-    for (const role of DEADLINE_ROLES) {
-      const d = cycle.deadlines[role];
-      if (d?.open && d?.close && d.open > d.close) {
-        return `${role.replace('_', ' ')} application window: opens after it closes.`;
       }
     }
     return null;
@@ -416,14 +383,22 @@
     }
     status.classList.remove('error');
     status.textContent = 'Saving…';
-    const { error } = await sb.from('site_config')
-      .update({ value: cycle, updated_at: new Date().toISOString() })
-      .eq('key', CYCLE_KEY);
-    if (error) {
-      status.textContent = `Couldn't save: ${error.message}`;
+    const { data: latest, error: readError } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
+    if (readError || !latest) {
+      status.textContent = `Couldn't load current settings: ${readError?.message || 'no config row found'}`;
       status.classList.add('error');
       return;
     }
+    cycle.deadlines = deriveDeadlines(cycle.milestones, latest.value.deadlines || {});
+    const { data, error } = await sb.from('site_config')
+      .update({ value: cycle, updated_at: new Date().toISOString() })
+      .eq('key', CYCLE_KEY).select();
+    if (error || !data?.length) {
+      status.textContent = `Couldn't save: ${error?.message || 'no config row was updated'}`;
+      status.classList.add('error');
+      return;
+    }
+    currentCycle = cycle;
     status.textContent = `Saved at ${new Date().toLocaleTimeString()}.`;
   });
 
@@ -442,6 +417,8 @@
     wrap.hidden = false;
   });
 
+  let currentCycle = {};
+
   async function loadCycleIntoEditor() {
     const { data, error } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
     const status = document.getElementById('save-status');
@@ -451,23 +428,38 @@
       return;
     }
     const cycle = data.value;
+    currentCycle = cycle;
     document.getElementById('cycle-year').value = cycle.year || '';
     [0, 1, 2].forEach((i) => { document.getElementById(`col-${i}`).value = cycle.columns?.[i] || ''; });
-    for (const role of DEADLINE_ROLES) {
-      document.getElementById(`dl-${role}-open`).value = cycle.deadlines?.[role]?.open || '';
-      document.getElementById(`dl-${role}-close`).value = cycle.deadlines?.[role]?.close || '';
-    }
+    document.getElementById('faq-footer').value = cycle.faq_footer || '';
+    faqEditor.replaceChildren(); (cycle.faq || []).forEach(addFaq);
     editorRows.innerHTML = '';
     (cycle.milestones || []).forEach((m) => addRow(m));
     if (!cycle.milestones?.length) addRow();
     renderWindowStatus(cycle);
   }
 
+  async function saveMilestonesQuick(audience, edit) {
+    const status = document.getElementById('window-status-message');
+    const { data: latest, error: readError } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
+    if (readError || !latest) { status.textContent = `Could not read current settings: ${readError?.message || 'no config row found'}.`; return; }
+    const cycle = JSON.parse(JSON.stringify(latest.value));
+    const linked = cycle.milestones?.filter((m) => m.cells?.some((c) => c.href?.includes(`cohort=${audience}`))) || [];
+    if (!linked.length) { status.textContent = `No milestone links to ${audience.replace('_', ' ')}.`; return; }
+    linked.sort((a, b) => (b.end || b.date || '').localeCompare(a.end || a.date || ''));
+    edit(linked[0]);
+    const updated = { ...cycle, deadlines: deriveDeadlines(cycle.milestones, cycle.deadlines || {}) };
+    const { data, error } = await sb.from('site_config').update({ value: updated, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
+    if (error || !data?.length) { status.textContent = `Could not save: ${error?.message || 'no config row was updated'}`; return; }
+    status.textContent = '';
+    await loadCycleIntoEditor();
+  }
+
   // --- Mentee application windows, opened by deck approval, not a date ------
 
   function windowState(d) {
     if (!d?.open) return 'not yet open';
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayET();
     if (d.close && today > d.close) return `closed ${d.close}`;
     return `open since ${d.open}`;
   }
@@ -497,59 +489,38 @@
     }
   }
 
-  // Reads, patches, and writes one audience's deadline object. Reports any
-  // error through #window-status-message instead of failing silently, and
-  // only reloads the editor when the write actually succeeds.
-  async function patchWindow(audience, patch) {
-    const status = document.getElementById('window-status-message');
-    const { data, error: readError } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
-    if (readError || !data) {
-      status.textContent = `Could not read the current settings: ${readError?.message || 'no config row found'}.`;
-      return false;
-    }
-    const cycle = data.value;
-    const updated = {
-      ...cycle,
-      deadlines: { ...cycle.deadlines, [audience]: { ...cycle.deadlines?.[audience], ...patch } },
-    };
-    const { error: writeError } = await sb.from('site_config')
-      .update({ value: updated, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY);
-    if (writeError) {
-      status.textContent = `Could not save: ${writeError.message}`;
-      return false;
-    }
-    status.textContent = '';
-    return true;
-  }
-
-  // Sets `open` to today, but only the first time -- a later regenerate +
-  // reapprove of the same audience's decks must not reopen or reset it.
-  // Presence of `open` is the "already happened once" signal, no separate
-  // tracking flag needed.
   async function maybeAutoOpenWindow(audience) {
     if (audience !== 'students' && audience !== 'young_alums') return;
-    const { data } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
-    if (!data || data.value.deadlines?.[audience]?.open) return;
-    await patchWindow(audience, { open: new Date().toISOString().slice(0, 10) });
+    const { data, error } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
+    const status = document.getElementById('window-status-message');
+    if (error || !data) { status.textContent = `Could not read current settings: ${error?.message || 'no config row found'}.`; return; }
+    if (data.value.deadlines?.[audience]?.open) return;
+    const cycle = JSON.parse(JSON.stringify(data.value));
+    const deadlines = { ...cycle.deadlines, [audience]: { ...cycle.deadlines?.[audience], open: todayET() } };
+    const { data: saved, error: writeError } = await sb.from('site_config').update({ value: { ...cycle, deadlines: deriveDeadlines(cycle.milestones, deadlines) }, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
+    if (writeError || !saved?.length) { status.textContent = `Could not save: ${writeError?.message || 'no config row was updated'}.`; return; }
+    status.textContent = '';
+    await loadCycleIntoEditor();
   }
 
-  // Manual mistake-recovery escape hatch -- deliberately not wired to
-  // anything automatic (not regenerate, not reapproval).
   async function closeWindowNow(audience, label) {
     if (!confirm(`Close the ${label} application window now? Use this only to correct a genuine mistake.`)) return;
-    // `close` is inclusive of that day everywhere else in this system (the
-    // client display, submit-response, mentor-decks), so "today" would not
-    // read as closed until tomorrow. Yesterday closes it immediately without
-    // changing that shared convention.
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    if (await patchWindow(audience, { close: yesterday })) loadCycleIntoEditor();
+    const [year, month, day] = todayET().split('-').map(Number);
+    const yesterday = new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
+    await saveMilestonesQuick(audience, (row) => {
+      if (row.end) { row.end = yesterday; row.date = row.date > row.end ? row.end : row.date; }
+      else row.date = yesterday;
+    });
   }
 
-  // Symmetric manual override: clears `close` entirely, matching the "blank
-  // field means no restriction" rule already used everywhere in this form.
   async function openWindowNow(audience, label) {
-    if (!confirm(`Open the ${label} application window right now? Everyone can apply immediately.`)) return;
-    if (await patchWindow(audience, { close: undefined })) loadCycleIntoEditor();
+    if (!confirm(`Open the ${label} application window now? Its close date will move 30 days out.`)) return;
+    const [year, month, day] = todayET().split('-').map(Number);
+    const closeDate = new Date(Date.UTC(year, month - 1, day + 30)).toISOString().slice(0, 10);
+    await saveMilestonesQuick(audience, (row) => {
+      if (row.end) { row.end = closeDate; row.date = row.date > row.end ? row.end : row.date; }
+      else row.date = closeDate;
+    });
   }
 
   // --- Applications list ------------------------------------------------
@@ -620,7 +591,7 @@
     if (!filtered.length) return;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([toCsv(filtered)], { type: 'text/csv' }));
-    a.download = `banter-applications-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `banter-applications-${todayET()}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   });
@@ -723,6 +694,7 @@
     const status = document.getElementById('download-decks-status');
     if (!decks.length) { status.textContent = 'No decks to download.'; return; }
     status.textContent = `Downloading ${decks.length} deck(s)…`;
+    let started = 0;
     for (const d of decks) {
       const { data: signed, error } = await sb.storage.from('banter-decks').createSignedUrl(d.object_path, 300);
       if (error) continue;
@@ -731,11 +703,12 @@
       a.download = d.object_path.split('/').pop();
       document.body.appendChild(a);
       a.click();
+      started++;
       a.remove();
       // Browsers throttle/drop near-simultaneous downloads from one click.
       await new Promise((r) => setTimeout(r, 400));
     }
-    status.textContent = `Started ${decks.length} download(s).`;
+    status.textContent = `Started ${started} download(s).`;
   });
 
   document.getElementById('import-decks-btn').addEventListener('click', async () => {
@@ -814,9 +787,10 @@
     const { data: matchRows, error } = await sb.from('matches').select('*').order('created_at', { ascending: false });
     if (error) { status.textContent = `Couldn't load matches: ${error.message}`; return; }
     const ids = [...new Set(matchRows.flatMap((m) => [m.mentor, m.mentee]))];
-    const { data: people } = ids.length
+    const { data: people, error: lookupError } = ids.length
       ? await sb.from('survey_responses').select('id,name,email').in('id', ids)
-      : { data: [] };
+      : { data: [], error: null };
+    if (lookupError) { status.textContent = `Couldn't load match names: ${lookupError.message}`; return; }
     matches = matchRows;
     matchPeople = Object.fromEntries((people || []).map((p) => [p.id, p]));
     renderMatches();
@@ -865,7 +839,7 @@
     const csv = toCsvString(lines);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = `banter-matches-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `banter-matches-${todayET()}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
     status.textContent = `Downloaded ${matches.length} match(es).`;
@@ -918,8 +892,9 @@
     if (lookupError) { status.textContent = `Couldn't validate: ${lookupError.message}`; return; }
     const byEmail = new Map();
     for (const p of people) {
-      if (!byEmail.has(p.email)) byEmail.set(p.email, []);
-      byEmail.get(p.email).push(p);
+      const email = (p.email || '').toLowerCase();
+      if (!byEmail.has(email)) byEmail.set(email, []);
+      byEmail.get(email).push(p);
     }
 
     const errors = [];
