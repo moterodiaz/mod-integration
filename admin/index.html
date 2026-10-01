@@ -452,10 +452,11 @@
       const cells = m.cells || [];
       if (!cells.some((c) => cohortFromHref(c.href) === audience)) continue;
       if (!cells.some((c) => { const r = cohortFromHref(c.href); return r && r !== audience; })) continue;
+      // No `display` on the split row: it is a date override that would keep
+      // advertising the old window after the edit changes the dates.
       splits.push([m, {
         date: m.date,
         end: m.end,
-        display: m.display,
         cells: cells.map((c) => (cohortFromHref(c.href) === audience ? c : {})),
       }]);
       m.cells = cells.map((c) => (cohortFromHref(c.href) === audience ? {} : c));
@@ -914,15 +915,18 @@
     // `.in()` is case-sensitive, so it misses mixed-case stored addresses —
     // including duplicates that should trip the ambiguity check below.
     // `ilike` with every wildcard char escaped is a case-insensitive exact
-    // match; chunking keeps the or() URL bounded for large CSVs.
+    // match; chunking keeps the or() URL bounded for large CSVs. PostgREST
+    // also treats `*` as a wildcard with no escape, so results are filtered
+    // against the requested addresses before use.
     const like = (e) => `email.ilike."${e.replace(/\\/g, '\\\\').replace(/["%_]/g, (c) => `\\${c}`)}"`;
+    const wanted = new Set(emails);
     const people = [];
     let lookupError = null;
     for (let i = 0; !lookupError && i < emails.length; i += 50) {
       const { data, error } = await sb.from('survey_responses').select('id,email,cohort')
         .or(emails.slice(i, i + 50).map(like).join(','));
       if (error) lookupError = error;
-      else people.push(...data);
+      else people.push(...data.filter((p) => wanted.has((p.email || '').toLowerCase())));
     }
     if (lookupError) { status.textContent = `Couldn't validate: ${lookupError.message}`; return; }
     const byEmail = new Map();
