@@ -452,11 +452,10 @@
       const cells = m.cells || [];
       if (!cells.some((c) => cohortFromHref(c.href) === audience)) continue;
       if (!cells.some((c) => { const r = cohortFromHref(c.href); return r && r !== audience; })) continue;
-      // No `display` on the split row: it is a date override that would keep
-      // advertising the old window after the edit changes the dates.
       splits.push([m, {
         date: m.date,
         end: m.end,
+        display: m.display,
         cells: cells.map((c) => (cohortFromHref(c.href) === audience ? c : {})),
       }]);
       m.cells = cells.map((c) => (cohortFromHref(c.href) === audience ? {} : c));
@@ -533,6 +532,7 @@
       if ((row.end || row.date) < today) return; // already past — can't hold the window open
       if (row.end) { row.end = yesterday; row.date = row.date > row.end ? row.end : row.date; }
       else row.date = yesterday;
+      delete row.display; // a date caption would keep advertising the old window
     });
   }
 
@@ -546,6 +546,7 @@
       if ((row.end || row.date) <= closeDate && !isLatest) return;
       if (row.end) { row.end = closeDate; row.date = row.date > row.end ? row.end : row.date; }
       else row.date = closeDate;
+      delete row.display; // a date caption would keep advertising the old window
     });
   }
 
