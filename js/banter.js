@@ -17,24 +17,35 @@ export const SAFE_HREF = /^(https?:|\/|mailto:)/;
 
 export const todayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
+// Mentee windows open on first deck approval (or an admin's "Open now"),
+// never on a milestone's start date — so `deriveDeadlines` only supplies
+// their `close`. Mentor windows are plain date ranges.
+const APPROVAL_GATED = new Set(['students', 'young_alums']);
+
+// cohort= need not be the first query parameter (e.g.
+// /apply/?source=timeline&cohort=students), but the link must target /apply —
+// /decks/?cohort=... links use the same parameter for a different meaning.
+export const cohortFromHref = (href) =>
+  href?.match(/\/apply\/?\?[^#]*\bcohort=([a-z_]+)/)?.[1];
+
 export function deriveDeadlines(milestones, prev = {}) {
   const derived = {};
   for (const m of milestones || []) {
     const date = m.date;
     for (const cell of m.cells || []) {
-      const match = cell.href?.match(/\/apply\/?\?cohort=([a-z_]+)/);
-      if (!match) continue;
-      const role = match[1];
+      const role = cohortFromHref(cell.href);
+      if (!role) continue;
       const d = derived[role] || (derived[role] = {});
-      if (m.end) d.open = !d.open || date < d.open ? date : d.open;
+      if (m.end && !APPROVAL_GATED.has(role)) d.open = !d.open || date < d.open ? date : d.open;
       d.close = !d.close || (m.end || date) > d.close ? (m.end || date) : d.close;
     }
   }
   for (const [role, deadlines] of Object.entries(prev)) {
-    if (!derived[role]) derived[role] = deadlines;
-  }
-  for (const role of Object.keys(derived)) {
-    if (derived[role] && prev[role]) derived[role].open ??= prev[role].open;
+    if (derived[role]) derived[role].open ??= deadlines?.open;
+    // A role whose milestones were all removed keeps only its `open` — the
+    // approval-set timestamp that exists independently of milestones. A stale
+    // `close` would keep restricting applicants after the row is gone.
+    else if (deadlines?.open) derived[role] = { open: deadlines.open };
   }
   if (derived.mentor_alums) derived.alumni = derived.mentor_alums;
   return derived;
@@ -144,7 +155,7 @@ export function renderTimelineError(table, err) {
 
 
 export function renderFaq(container, cycle) {
-  if (!cycle.faq?.length) return;
+  if (!cycle.faq?.length && !(cycle.faq_footer || '').trim()) return;
   container.replaceChildren();
   function appendText(parent, text) {
     const pattern = /(https?:\/\/[^\s]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g;

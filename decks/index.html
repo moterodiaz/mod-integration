@@ -64,11 +64,12 @@
     if (!decks.length) {
       empty.style.display = 'block';
     } else {
+      let shown = 0;
       for (const d of decks) {
+        if (!SAFE_HREF.test(d.url || '')) continue;
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.className = 'deck-link';
-        if (!SAFE_HREF.test(d.url || '')) continue;
         a.href = d.url;
         a.download = '';
         a.textContent = d.name;
@@ -79,7 +80,9 @@
         a.appendChild(span);
         li.appendChild(a);
         list.appendChild(li);
+        shown++;
       }
+      if (!shown) empty.style.display = 'block';
     }
   } catch (err) {
     status.hidden = true;

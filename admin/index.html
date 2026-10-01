@@ -239,7 +239,7 @@
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref } from '../js/banter.js';
 
   const sb = createClient(SUPABASE_URL, ANON_KEY);
   const CYCLE_KEY = 'banter_cycle';
@@ -444,10 +444,12 @@
     const { data: latest, error: readError } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
     if (readError || !latest) { status.textContent = `Could not read current settings: ${readError?.message || 'no config row found'}.`; return; }
     const cycle = JSON.parse(JSON.stringify(latest.value));
-    const linked = cycle.milestones?.filter((m) => m.cells?.some((c) => c.href?.includes(`cohort=${audience}`))) || [];
+    const linked = cycle.milestones?.filter((m) => m.cells?.some((c) => cohortFromHref(c.href) === audience)) || [];
     if (!linked.length) { status.textContent = `No milestone links to ${audience.replace('_', ' ')}.`; return; }
     linked.sort((a, b) => (b.end || b.date || '').localeCompare(a.end || a.date || ''));
-    edit(linked[0]);
+    // Close derives from the *latest* linked row, so the edit must reach every
+    // row that could keep the window in its current state — not just the last.
+    linked.forEach((row, i) => edit(row, i === 0));
     const updated = { ...cycle, deadlines: deriveDeadlines(cycle.milestones, cycle.deadlines || {}) };
     const { data, error } = await sb.from('site_config').update({ value: updated, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
     if (error || !data?.length) { status.textContent = `Could not save: ${error?.message || 'no config row was updated'}`; return; }
@@ -505,9 +507,11 @@
 
   async function closeWindowNow(audience, label) {
     if (!confirm(`Close the ${label} application window now? Use this only to correct a genuine mistake.`)) return;
-    const [year, month, day] = todayET().split('-').map(Number);
+    const today = todayET();
+    const [year, month, day] = today.split('-').map(Number);
     const yesterday = new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
     await saveMilestonesQuick(audience, (row) => {
+      if ((row.end || row.date) < today) return; // already past — can't hold the window open
       if (row.end) { row.end = yesterday; row.date = row.date > row.end ? row.end : row.date; }
       else row.date = yesterday;
     });
@@ -517,7 +521,10 @@
     if (!confirm(`Open the ${label} application window now? Its close date will move 30 days out.`)) return;
     const [year, month, day] = todayET().split('-').map(Number);
     const closeDate = new Date(Date.UTC(year, month - 1, day + 30)).toISOString().slice(0, 10);
-    await saveMilestonesQuick(audience, (row) => {
+    await saveMilestonesQuick(audience, (row, isLatest) => {
+      // Clamp rows ending after closeDate so none keep the window open longer;
+      // bump the latest row so the close lands exactly 30 days out.
+      if ((row.end || row.date) <= closeDate && !isLatest) return;
       if (row.end) { row.end = closeDate; row.date = row.date > row.end ? row.end : row.date; }
       else row.date = closeDate;
     });
@@ -883,11 +890,13 @@
 
     // Resolve every referenced email in one query so the whole file can be
     // validated before anything is written.
-    const emails = [...new Set(rows.slice(1)
-      .flatMap((r) => [r[col('mentor_email')], r[col('mentee_email')]])
-      .map((e) => (e || '').trim().toLowerCase()).filter(Boolean))];
-    const { data: people, error: lookupError } = emails.length
-      ? await sb.from('survey_responses').select('id,email,cohort').in('email', emails)
+    const hasEmails = rows.slice(1)
+      .some((r) => (r[col('mentor_email')] || '').trim() || (r[col('mentee_email')] || '').trim());
+    // No email filter: stored addresses may be mixed-case, and `.in()` is
+    // case-sensitive — lowercased CSV values would never match them. The
+    // byEmail map below does the case-insensitive matching instead.
+    const { data: people, error: lookupError } = hasEmails
+      ? await sb.from('survey_responses').select('id,email,cohort')
       : { data: [] };
     if (lookupError) { status.textContent = `Couldn't validate: ${lookupError.message}`; return; }
     const byEmail = new Map();

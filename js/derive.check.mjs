@@ -30,7 +30,31 @@ assert.deepEqual(closeOnlyMentorWithApproval.mentor_alums, { close: '2026-09-12'
 const menteeOpenFromRange = deriveDeadlines([
   { date: '2026-09-09', end: '2026-10-15', cells: [link('students')] },
 ], { students: { open: '2026-08-20' } });
-assert.deepEqual(menteeOpenFromRange.students, { open: '2026-09-09', close: '2026-10-15' });
+// Mentee windows open on deck approval, not a milestone's start: the range
+// supplies only the close, and the approval-set open survives unchanged.
+assert.deepEqual(menteeOpenFromRange.students, { open: '2026-08-20', close: '2026-10-15' });
+const menteeRangeNoApproval = deriveDeadlines([
+  { date: '2026-09-09', end: '2026-10-15', cells: [link('students')] },
+]);
+assert.deepEqual(menteeRangeNoApproval.students, { close: '2026-10-15' });
+// cohort= need not be the first query parameter.
+const notFirstParam = deriveDeadlines([
+  { date: '2026-10-01', cells: [{ href: '/apply/?source=timeline&cohort=mentor_alums' }] },
+]);
+assert.deepEqual(notFirstParam.mentor_alums, { close: '2026-10-01' });
+// But a cohort param on a different page (decks) is not an application link.
+const decksLink = deriveDeadlines([
+  { date: '2026-10-01', cells: [{ href: '/decks/?cohort=students' }] },
+]);
+assert.equal(decksLink.students, undefined);
+// Removing every linked milestone drops a stale close; an approval-set open
+// survives because it exists independently of milestones.
+const removed = deriveDeadlines([], {
+  students: { open: '2026-09-01', close: '2026-10-15' },
+  mentor_alums: { open: '2026-08-25', close: '2026-10-01' },
+});
+assert.deepEqual(removed.students, { open: '2026-09-01' });
+assert.deepEqual(removed.mentor_alums, { open: '2026-08-25' });
 assert.equal(deriveDeadlines([]).young_alums, undefined);
 assert.match(todayET(), /^\d{4}-\d{2}-\d{2}$/);
 console.log('deriveDeadlines checks passed');
