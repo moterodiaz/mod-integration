@@ -15,18 +15,40 @@ export const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 // a link, rather than keeping a second copy of the pattern in sync by hand.
 export const SAFE_HREF = /^(https?:|\/|mailto:)/;
 
-// Verbatim from the original inline script (index.html), which compared a
-// hand-authored 'YYYYMMDD-YYYYMMDD' className to today's integer date.
-function pad(d) {
-  const dd = d.toString();
-  return dd.length === 1 ? '0' + dd : dd;
-}
-function getIntDate() {
-  const d = new Date();
-  return parseInt(pad(d.getFullYear()) + pad(d.getMonth() + 1) + pad(d.getDate()), 10);
-}
-function intDate(iso) {
-  return parseInt(iso.replace(/-/g, ''), 10);
+export const todayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+// Mentee windows open on first deck approval (or an admin's "Open now"),
+// never on a milestone's start date — so `deriveDeadlines` only supplies
+// their `close`. Mentor windows are plain date ranges.
+const APPROVAL_GATED = new Set(['students', 'young_alums']);
+
+// cohort= need not be the first query parameter (e.g.
+// /apply/?source=timeline&cohort=students), but the link must target /apply —
+// /decks/?cohort=... links use the same parameter for a different meaning.
+export const cohortFromHref = (href) =>
+  href?.match(/\/apply\/?\?[^#]*\bcohort=([a-z_]+)/)?.[1];
+
+export function deriveDeadlines(milestones, prev = {}) {
+  const derived = {};
+  for (const m of milestones || []) {
+    const date = m.date;
+    for (const cell of m.cells || []) {
+      const role = cohortFromHref(cell.href);
+      if (!role) continue;
+      const d = derived[role] || (derived[role] = {});
+      if (m.end && !APPROVAL_GATED.has(role)) d.open = !d.open || date < d.open ? date : d.open;
+      d.close = !d.close || (m.end || date) > d.close ? (m.end || date) : d.close;
+    }
+  }
+  for (const [role, deadlines] of Object.entries(prev)) {
+    if (derived[role]) derived[role].open ??= deadlines?.open;
+    // A role whose milestones were all removed keeps only its `open` — the
+    // approval-set timestamp that exists independently of milestones. A stale
+    // `close` would keep restricting applicants after the row is gone.
+    else if (deadlines?.open) derived[role] = { open: deadlines.open };
+  }
+  if (derived.mentor_alums) derived.alumni = derived.mentor_alums;
+  return derived;
 }
 
 function ordinal(n) {
@@ -78,8 +100,8 @@ export function renderTimeline(table, cycle) {
     headRow.appendChild(th);
   }
 
-  const today = getIntDate();
-  const currentIdx = cycle.milestones.findIndex((m) => intDate(m.date) >= today);
+  const today = todayET();
+  const currentIdx = cycle.milestones.findIndex((m) => (m.end || m.date) >= today);
 
   cycle.milestones.forEach((m, i) => {
     const tr = tbody.insertRow();
@@ -87,7 +109,7 @@ export function renderTimeline(table, cycle) {
     else if (i === currentIdx) tr.className = 'current';
 
     const dateCell = tr.insertCell();
-    dateCell.textContent = m.display || formatDate(m.date);
+    dateCell.textContent = m.display || `${formatDate(m.date)}${m.end ? ` – ${formatDate(m.end)}` : ''}`;
 
     for (let c = 0; c < cycle.columns.length; c++) {
       const cell = m.cells[c] || {};
@@ -129,4 +151,34 @@ export function renderTimelineError(table, err) {
   details.append(summary, code);
   td.appendChild(details);
   table.setAttribute('aria-busy', 'false');
+}
+
+
+export function renderFaq(container, cycle) {
+  if (!cycle.faq?.length && !(cycle.faq_footer || '').trim()) return;
+  container.replaceChildren();
+  function appendText(parent, text) {
+    const pattern = /(https?:\/\/[^\s]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/g;
+    let last = 0;
+    for (const match of text.matchAll(pattern)) {
+      parent.append(document.createTextNode(text.slice(last, match.index)));
+      let value = match[0].replace(/["'>.,!?;:]+$/, '');
+      while ((value.match(/\)/g) || []).length > (value.match(/\(/g) || []).length) value = value.slice(0, -1);
+      const href = value.includes('@') ? `mailto:${value}` : value;
+      if (SAFE_HREF.test(href)) { const a = document.createElement('a'); a.href = href; a.textContent = value; parent.append(a); }
+      else parent.append(document.createTextNode(value));
+      parent.append(document.createTextNode(match[0].slice(value.length)));
+      last = match.index + match[0].length;
+    }
+    parent.append(document.createTextNode(text.slice(last)));
+  }
+  for (const item of cycle.faq) {
+    const h = document.createElement('h5'); h.textContent = item.q || ''; container.append(h);
+    for (const paragraph of (item.a || '').split(/\n\s*\n/).filter(Boolean)) {
+      const p = document.createElement('p'); appendText(p, paragraph); container.append(p);
+    }
+  }
+  for (const paragraph of (cycle.faq_footer || '').split(/\n\s*\n/).filter(Boolean)) {
+    const p = document.createElement('p'); appendText(p, paragraph); container.append(p);
+  }
 }

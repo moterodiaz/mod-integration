@@ -94,7 +94,7 @@
   </form>
 </main>
 <script type="module">
-  import { SUPABASE_URL, ANON_KEY, loadCycle } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, loadCycle, todayET } from '../js/banter.js';
 
   const form = document.getElementById('signup-form');
   const status = document.getElementById('status');
@@ -133,19 +133,20 @@
       return true;
     }
     const d = cycleData.deadlines?.[role];
-    if (!d) {
-      form.hidden = false;
-      closedNotice.style.display = 'none';
-      return true;
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    const isOpen = (!d.open || today >= d.open) && (!d.close || today <= d.close);
+    const today = todayET();
+    // Mentee windows open on first deck approval, so a missing `open` means
+    // "not yet open" — their milestones only supply a close date. Mentor
+    // windows are plain dates: no entry or no `open` means unrestricted.
+    const mentee = role === 'students' || role === 'young_alums';
+    const isOpen = mentee
+      ? !!(d?.open && today >= d.open && (!d.close || today <= d.close))
+      : !d || ((!d.open || today >= d.open) && (!d.close || today <= d.close));
     form.hidden = !isOpen;
     closedNotice.style.display = isOpen ? 'none' : 'block';
     if (!isOpen) {
-      closedDetail.textContent = (d.close && today > d.close)
+      closedDetail.textContent = (d?.close && today > d.close)
         ? `This deadline closed on ${d.close}.`
-        : `This opens ${d.open}.`;
+        : d?.open ? `This opens ${d.open}.` : 'This window has not opened yet.';
     }
     return isOpen;
   }
