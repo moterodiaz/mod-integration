@@ -96,7 +96,7 @@
     <h3>Form links</h3>
     <div class="table-responsive">
       <table id="form-links-table">
-        <thead><tr><th>Form</th><th>URL</th><th>Status</th></tr></thead>
+        <thead><tr><th>Form</th><th>URL</th></tr></thead>
         <tbody id="form-links-body"></tbody>
       </table>
     </div>
@@ -248,7 +248,7 @@
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText, formatDate, APPROVAL_GATED } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText } from '../js/banter.js';
 
   const sb = createClient(SUPABASE_URL, ANON_KEY);
   const CYCLE_KEY = 'banter_cycle';
@@ -474,20 +474,6 @@
     }));
   }
 
-  function fmtDeadlineStatus(d, today, approvalGated) {
-    if (!d) return '';
-    const { open, close } = d;
-    if (close && today > close) return 'closed';
-    // Mentee windows open on deck approval — with no open date the survey
-    // is unavailable regardless of its close, so say so rather than
-    // "closes …".
-    if (approvalGated && !open) return 'not yet open';
-    if (open && close) return `open ${formatDate(open)} – ${formatDate(close)}`;
-    if (open) return `open since ${formatDate(open)}`;
-    if (close) return `closes ${formatDate(close)}`;
-    return '';
-  }
-
   // cohort param on a decks link (parallel to cohortFromHref for apply links).
   const deckCohortFromHref = (href) => href?.match(/(^|\/)decks\/?\?[^#]*\bcohort=([a-z_]+)/)?.[2];
 
@@ -498,7 +484,6 @@
     const tbody = document.getElementById('form-links-body');
     tbody.innerHTML = '';
     const today = todayET();
-    const deadlines = deriveDeadlines(cycle.milestones || [], cycle.deadlines || {});
 
     for (const f of FORM_LINKS) {
       const resolved = resolveHref(f.path);
@@ -521,9 +506,9 @@
       copyBtn.addEventListener('click', () => navigator.clipboard.writeText(resolved || f.path).catch(() => {}));
       urlTd.append(code, copyBtn);
 
-      const statusTd = document.createElement('td');
       if (!isLinked) {
-        statusTd.textContent = 'not linked on timeline';
+        const warn = document.createElement('span'); warn.textContent = ' — not linked on timeline';
+        labelTd.appendChild(warn);
         if (cohort === 'students' || cohort === 'young_alums') {
           const addBtn = document.createElement('button');
           addBtn.type = 'button'; addBtn.className = 'secondary'; addBtn.textContent = 'Add row';
@@ -557,14 +542,10 @@
             if (!isLinkedFn('young_alums')) addFor('young_alums', yCol);
             refreshFormLinks();
           });
-          statusTd.appendChild(addBtn);
+          labelTd.appendChild(addBtn);
         }
-      } else if (cohort) {
-        statusTd.textContent = fmtDeadlineStatus(deadlines[cohort], today, APPROVAL_GATED.has(cohort)) || 'linked';
-      } else {
-        statusTd.textContent = 'linked';
       }
-      tr.append(labelTd, urlTd, statusTd);
+      tr.append(labelTd, urlTd);
       tbody.appendChild(tr);
     }
   }
