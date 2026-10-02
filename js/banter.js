@@ -15,6 +15,33 @@ export const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 // a link, rather than keeping a second copy of the pattern in sync by hand.
 export const SAFE_HREF = /^(https?:|\/|mailto:)/;
 
+export const FORM_LINKS = [
+  { label: 'Mentor survey', path: 'apply/?cohort=mentor_alums' },
+  { label: 'Student mentee survey', path: 'apply/?cohort=students' },
+  { label: 'Recent-alumni mentee survey', path: 'apply/?cohort=young_alums' },
+  { label: 'Mentor profiles (students)', path: 'decks/?cohort=students' },
+  { label: 'Mentor profiles (recent alumni)', path: 'decks/?cohort=young_alums' },
+];
+
+export const SITE_ROOT = new URL('../', import.meta.url);
+
+// Rewrites only known-dead hosts (olinalumni.org) and relative/path-only forms
+// of /apply/ and /decks/ to site-relative paths. Any other host passes through
+// unchanged so `https://example.com/jobs/apply/now` is never mangled.
+export function normalizeHref(href) {
+  if (!href) return href;
+  const m = href.match(
+    /^(?:https?:\/\/(?:www\.)?olinalumni\.org)?(?:\/resources\/banter)?\/?((apply|decks)[/?][^#]*)(#.*)?$/
+  );
+  if (!m) return href;
+  return m[1] + (m[3] || '');
+}
+
+export const resolveHref = (href) => {
+  try { return new URL(normalizeHref(href), SITE_ROOT).href; }
+  catch (_) { return null; }
+};
+
 export const todayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
 // Mentee windows open on first deck approval (or an admin's "Open now"),
@@ -25,8 +52,9 @@ const APPROVAL_GATED = new Set(['students', 'young_alums']);
 // cohort= need not be the first query parameter (e.g.
 // /apply/?source=timeline&cohort=students), but the link must target /apply —
 // /decks/?cohort=... links use the same parameter for a different meaning.
+// Matches both absolute paths (/apply/?) and site-relative ones (apply/?).
 export const cohortFromHref = (href) =>
-  href?.match(/\/apply\/?\?[^#]*\bcohort=([a-z_]+)/)?.[1];
+  href?.match(/(^|\/)apply\/?\?[^#]*\bcohort=([a-z_]+)/)?.[2];
 
 export function deriveDeadlines(milestones, prev = {}) {
   const derived = {};
@@ -115,14 +143,13 @@ export function renderTimeline(table, cycle) {
       const cell = m.cells[c] || {};
       const td = tr.insertCell();
       if (!cell.label) continue;
-      if (cell.href && SAFE_HREF.test(cell.href)) {
+      const resolved = cell.href ? resolveHref(cell.href) : null;
+      if (resolved && SAFE_HREF.test(resolved)) {
         const a = document.createElement('a');
-        a.href = cell.href;
+        a.href = resolved;
         a.textContent = cell.label;
         td.appendChild(a);
-      } else {
-        td.textContent = cell.label;
-      }
+      } else td.textContent = cell.label;
     }
   });
 
@@ -153,6 +180,28 @@ export function renderTimelineError(table, err) {
   table.setAttribute('aria-busy', 'false');
 }
 
+
+export function faqToText(faq) {
+  return (faq || []).map((item) => `Q: ${item.q || ''}\n${item.a || ''}`).join('\n\n');
+}
+
+export function textToFaq(text) {
+  const lines = (text || '').split('\n');
+  const entries = [];
+  let cur = null;
+  for (const line of lines) {
+    if (line.startsWith('Q:')) {
+      if (cur) entries.push(cur);
+      cur = { q: line.slice(2).trim(), a: '' };
+    } else if (cur) {
+      cur.a += (cur.a ? '\n' : '') + line;
+    } else if (line.trim()) {
+      throw new Error(`FAQ text must start with Q: (got: "${line.trim().slice(0, 40)}")`);
+    }
+  }
+  if (cur) entries.push(cur);
+  return entries.map((e) => ({ q: e.q, a: e.a.trim() }));
+}
 
 export function renderFaq(container, cycle) {
   if (!cycle.faq?.length && !(cycle.faq_footer || '').trim()) return;

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDeadlines, todayET } from './banter.js';
+import { deriveDeadlines, todayET, normalizeHref, cohortFromHref, textToFaq, faqToText } from './banter.js';
 const link = (role) => ({ href: `/apply/?cohort=${role}` });
 const previous = {
   students: { open: '2026-08-20' },
@@ -58,3 +58,43 @@ assert.deepEqual(removed.mentor_alums, { open: '2026-08-25' });
 assert.equal(deriveDeadlines([]).young_alums, undefined);
 assert.match(todayET(), /^\d{4}-\d{2}-\d{2}$/);
 console.log('deriveDeadlines checks passed');
+
+// normalizeHref — known-dead olinalumni.org forms get rewritten
+assert.equal(normalizeHref('https://www.olinalumni.org/resources/banter/apply/?cohort=mentor_alums'), 'apply/?cohort=mentor_alums');
+assert.equal(normalizeHref('https://olinalumni.org/resources/banter/apply/?cohort=mentor_alums'), 'apply/?cohort=mentor_alums');
+assert.equal(normalizeHref('/resources/banter/apply/?cohort=students'), 'apply/?cohort=students');
+assert.equal(normalizeHref('/resources/banter/decks/?cohort=students'), 'decks/?cohort=students');
+// already-normalized relative forms are unchanged
+assert.equal(normalizeHref('apply/?cohort=students'), 'apply/?cohort=students');
+assert.equal(normalizeHref('/apply/?cohort=students'), 'apply/?cohort=students');
+// slash-less form
+assert.equal(normalizeHref('apply?cohort=students'), 'apply?cohort=students');
+// fragment is preserved
+assert.equal(normalizeHref('apply/?cohort=students#section'), 'apply/?cohort=students#section');
+// any other host passes through untouched
+assert.equal(normalizeHref('https://docs.google.com/forms/123'), 'https://docs.google.com/forms/123');
+assert.equal(normalizeHref('https://example.com/jobs/apply/now'), 'https://example.com/jobs/apply/now');
+assert.equal(normalizeHref('https://forms.gle/decks/x'), 'https://forms.gle/decks/x');
+console.log('normalizeHref checks passed');
+
+// cohortFromHref on relative hrefs (no leading slash)
+assert.equal(cohortFromHref('apply/?cohort=students'), 'students');
+assert.equal(cohortFromHref('apply/?cohort=mentor_alums'), 'mentor_alums');
+console.log('cohortFromHref relative checks passed');
+
+// textToFaq / faqToText round trip
+const faqSingle = [{ q: 'What time?', a: 'We start at 3pm.' }];
+assert.deepEqual(textToFaq(faqToText(faqSingle)), faqSingle);
+// multi-paragraph answer
+const faqMulti = [{ q: 'Detail?', a: 'First paragraph.\n\nSecond paragraph.' }];
+assert.deepEqual(textToFaq(faqToText(faqMulti)), faqMulti);
+// two entries round-trip
+const faqTwo = [{ q: 'Q1', a: 'A1' }, { q: 'Q2', a: 'A2' }];
+assert.deepEqual(textToFaq(faqToText(faqTwo)), faqTwo);
+// text before first Q: throws
+assert.throws(() => textToFaq('some text\nQ: question'), /Q:/);
+assert.throws(() => textToFaq('no questions at all'), /Q:/);
+// empty input returns []
+assert.deepEqual(textToFaq(''), []);
+assert.deepEqual(textToFaq('\n\n'), []);
+console.log('textToFaq/faqToText checks passed');
