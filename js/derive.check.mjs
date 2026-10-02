@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDeadlines, todayET, normalizeHref, cohortFromHref, textToFaq, faqToText } from './banter.js';
+import { deriveDeadlines, todayET, normalizeHref, resolveHref, cohortFromHref, textToFaq, faqToText } from './banter.js';
 const link = (role) => ({ href: `/apply/?cohort=${role}` });
 const previous = {
   students: { open: '2026-08-20' },
@@ -57,6 +57,26 @@ assert.deepEqual(removed.students, { open: '2026-09-01' });
 assert.deepEqual(removed.mentor_alums, { open: '2026-08-25' });
 assert.equal(deriveDeadlines([]).young_alums, undefined);
 assert.match(todayET(), /^\d{4}-\d{2}-\d{2}$/);
+
+// FAQ text round-trips answers containing lines that look like markers.
+const faq = [
+  { q: 'Format?', a: 'Example:\nQ: Can I join?\nA: Yes' },
+  { q: 'Regex?', a: 'Use \\d+ and \\Q: stays literal' },
+];
+assert.deepEqual(textToFaq(faqToText(faq)), faq);
+assert.equal(textToFaq('Q: hi\nfirst\n\nQ: two\nsecond').length, 2);
+assert.throws(() => textToFaq('no marker'));
+
+// Dead olinalumni.org links rewrite to site paths, with or without a scheme.
+assert.equal(normalizeHref('https://www.olinalumni.org/resources/banter/apply/?cohort=students'), 'apply/?cohort=students');
+assert.equal(normalizeHref('www.olinalumni.org/apply/?cohort=students'), 'apply/?cohort=students');
+assert.equal(normalizeHref('https://example.com/jobs/apply/now'), 'https://example.com/jobs/apply/now');
+// resolveHref links only valid forms; bare tokens stay plain text.
+assert.equal(resolveHref('foo'), null);
+assert.equal(resolveHref('javascript:alert(1)'), null);
+assert.ok(resolveHref('apply/?cohort=students'));
+assert.ok(resolveHref('/resources/banter/apply/?cohort=students'));
+assert.ok(resolveHref('https://example.com/x'));
 console.log('deriveDeadlines checks passed');
 
 // normalizeHref — known-dead olinalumni.org forms get rewritten

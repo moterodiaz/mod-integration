@@ -248,7 +248,7 @@
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText, formatDate } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText, formatDate, APPROVAL_GATED } from '../js/banter.js';
 
   const sb = createClient(SUPABASE_URL, ANON_KEY);
   const CYCLE_KEY = 'banter_cycle';
@@ -322,7 +322,9 @@
       <td><input type="text" class="m-display" value="${esc(m.display || '')}" placeholder="e.g. ~Monthly through May"></td>
       <td><button type="button" class="remove">Remove</button></td>
     `;
-    tr.querySelector('.remove').addEventListener('click', () => tr.remove());
+    tr.querySelector('.remove').addEventListener('click', () => { tr.remove(); refreshFormLinks(); });
+    tr.querySelector('.m-date').addEventListener('change', refreshFormLinks);
+    tr.querySelector('.m-end').addEventListener('change', refreshFormLinks);
     const removeTd = tr.lastElementChild;
     for (let i = 0; i < 3; i++) {
       const cell = cells[i] || {};
@@ -347,7 +349,8 @@
       customInput.type = 'url'; customInput.className = 'm-href-custom'; customInput.dataset.col = i;
       customInput.placeholder = 'https://…'; customInput.value = isCustom ? norm : '';
       customInput.hidden = !isCustom;
-      sel.addEventListener('change', () => { customInput.hidden = sel.value !== 'custom'; });
+      sel.addEventListener('change', () => { customInput.hidden = sel.value !== 'custom'; refreshFormLinks(); });
+      customInput.addEventListener('input', refreshFormLinks);
       td.append(label, sel, customInput);
       tr.insertBefore(td, removeTd);
     }
@@ -471,10 +474,14 @@
     }));
   }
 
-  function fmtDeadlineStatus(d, today) {
+  function fmtDeadlineStatus(d, today, approvalGated) {
     if (!d) return '';
     const { open, close } = d;
     if (close && today > close) return 'closed';
+    // Mentee windows open on deck approval — with no open date the survey
+    // is unavailable regardless of its close, so say so rather than
+    // "closes …".
+    if (approvalGated && !open) return 'not yet open';
     if (open && close) return `open ${formatDate(open)} – ${formatDate(close)}`;
     if (open) return `open since ${formatDate(open)}`;
     if (close) return `closes ${formatDate(close)}`;
@@ -484,34 +491,14 @@
   // cohort param on a decks link (parallel to cohortFromHref for apply links).
   const deckCohortFromHref = (href) => href?.match(/(^|\/)decks\/?\?[^#]*\bcohort=([a-z_]+)/)?.[2];
 
+  const refreshFormLinks = () =>
+    renderFormLinks({ milestones: readMilestonesFromForm(), deadlines: currentCycle.deadlines });
+
   function renderFormLinks(cycle) {
     const tbody = document.getElementById('form-links-body');
     tbody.innerHTML = '';
     const today = todayET();
     const deadlines = deriveDeadlines(cycle.milestones || [], cycle.deadlines || {});
-
-    // For "Add row": find an existing editor row that links `linkedRole` and has a free cell.
-    const findFreeInRow = (linkedRole) => {
-      for (const tr of editorRows.querySelectorAll('tr')) {
-        let hasLinked = false, freeCol = -1;
-        for (let i = 0; i < 3; i++) {
-          const sel = tr.querySelector(`.m-href-select[data-col="${i}"]`);
-          if (!sel) continue;
-          const href = sel.value === 'custom' ? '' : sel.value;
-          if (cohortFromHref(href) === linkedRole) { hasLinked = true; continue; }
-          const lbl = tr.querySelector(`.m-label[data-col="${i}"]`);
-          if (!sel.value && !(lbl?.value.trim())) freeCol = i;
-        }
-        if (hasLinked && freeCol >= 0) return { tr, freeCol };
-      }
-      return null;
-    };
-    const fillCell = (tr, col, href) => {
-      const sel = tr.querySelector(`.m-href-select[data-col="${col}"]`);
-      const lbl = tr.querySelector(`.m-label[data-col="${col}"]`);
-      if (sel) { sel.value = href; const ci = tr.querySelector(`.m-href-custom[data-col="${col}"]`); if (ci) ci.hidden = true; }
-      if (lbl) lbl.value = 'Mentee survey';
-    };
 
     for (const f of FORM_LINKS) {
       const resolved = resolveHref(f.path);
@@ -544,36 +531,36 @@
           addBtn.addEventListener('click', () => {
             const formMilestones = readMilestonesFromForm();
             const isLinkedFn = (role) => formMilestones.some(m => m.cells?.some(c => cohortFromHref(c.href) === role));
-            const sLinked = isLinkedFn('students');
-            const yLinked = isLinkedFn('young_alums');
             const colFn = (role) => { for (const m of formMilestones) for (let i = 0; i < (m.cells || []).length; i++) if (cohortFromHref(m.cells[i]?.href) === role) return i; return -1; };
-            const sCDet = colFn('students'), yCDet = colFn('young_alums');
-            const sCol = sCDet >= 0 ? sCDet : 1;
-            const yCol = yCDet >= 0 ? yCDet : (sCol !== 2 ? 2 : 0);
-            const ds = currentCycle.deadlines?.students || {};
-            const dy = currentCycle.deadlines?.young_alums || {};
-            const date = ds.open || dy.open || today;
-            const end = ds.close || dy.close || undefined;
-            if (!sLinked && !yLinked) {
+            const sCol = colFn('students') >= 0 ? colFn('students') : 1;
+            const yCol = colFn('young_alums') >= 0 ? colFn('young_alums') : (sCol !== 2 ? 2 : 0);
+            // Each missing cohort gets its own row with its own close — never
+            // borrowed from the other cohort or defaulted to today, which
+            // would derive a window that closes before decks are approved.
+            const addFor = (role, col) => {
+              const d = currentCycle.deadlines?.[role] || {};
+              const label = role === 'students' ? 'student' : 'recent-alumni';
+              let end = d.close;
+              if (!end) {
+                const v = prompt(`Close date for the ${label} mentee survey (YYYY-MM-DD):`);
+                if (v === null) return;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) { alert('Use YYYY-MM-DD.'); return; }
+                end = v.trim();
+              }
+              if (d.open && end < d.open) { alert(`That close is before the ${label} window opened (${d.open}).`); return; }
+              if (end < today) { alert('That close is in the past — the survey would show as already closed.'); return; }
               const cells = [{}, {}, {}];
-              cells[sCol] = { label: 'Mentee survey', href: 'apply/?cohort=students' };
-              cells[yCol] = { label: 'Mentee survey', href: 'apply/?cohort=young_alums' };
-              addRow({ date, end, cells });
-            } else if (!sLinked) {
-              const found = findFreeInRow('young_alums');
-              if (found) fillCell(found.tr, found.freeCol, 'apply/?cohort=students');
-              else { const cells = [{}, {}, {}]; cells[sCol] = { label: 'Mentee survey', href: 'apply/?cohort=students' }; addRow({ date, end, cells }); }
-            } else if (!yLinked) {
-              const found = findFreeInRow('students');
-              if (found) fillCell(found.tr, found.freeCol, 'apply/?cohort=young_alums');
-              else { const cells = [{}, {}, {}]; cells[yCol] = { label: 'Mentee survey', href: 'apply/?cohort=young_alums' }; addRow({ date, end, cells }); }
-            }
-            renderFormLinks({ milestones: readMilestonesFromForm(), deadlines: currentCycle.deadlines });
+              cells[col] = { label: 'Mentee survey', href: `apply/?cohort=${role}` };
+              addRow({ date: d.open || today, end, cells });
+            };
+            if (!isLinkedFn('students')) addFor('students', sCol);
+            if (!isLinkedFn('young_alums')) addFor('young_alums', yCol);
+            refreshFormLinks();
           });
           statusTd.appendChild(addBtn);
         }
       } else if (cohort) {
-        statusTd.textContent = fmtDeadlineStatus(deadlines[cohort], today) || 'linked';
+        statusTd.textContent = fmtDeadlineStatus(deadlines[cohort], today, APPROVAL_GATED.has(cohort)) || 'linked';
       } else {
         statusTd.textContent = 'linked';
       }

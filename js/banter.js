@@ -31,14 +31,20 @@ export const SITE_ROOT = new URL('../', import.meta.url);
 export function normalizeHref(href) {
   if (!href) return href;
   const m = href.match(
-    /^(?:https?:\/\/(?:www\.)?olinalumni\.org)?(?:\/resources\/banter)?\/?((apply|decks)[/?][^#]*)(#.*)?$/
+    /^(?:(?:https?:\/\/)?(?:www\.)?olinalumni\.org)?(?:\/resources\/banter)?\/?((apply|decks)[/?][^#]*)(#.*)?$/
   );
   if (!m) return href;
   return m[1] + (m[3] || '');
 }
 
 export const resolveHref = (href) => {
-  try { return new URL(normalizeHref(href), SITE_ROOT).href; }
+  const n = normalizeHref(href);
+  // Check the normalized href before resolving: admin validation accepts
+  // absolute http(s)/mailto, root-relative, and the site-relative apply/decks
+  // forms — a bare token like `foo` stays plain text instead of becoming a
+  // broken link to SITE_ROOT/foo.
+  if (!n || !(SAFE_HREF.test(n) || /^(apply|decks)[/?]/.test(n))) return null;
+  try { return new URL(n, SITE_ROOT).href; }
   catch (_) { return null; }
 };
 
@@ -47,7 +53,7 @@ export const todayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 
 // Mentee windows open on first deck approval (or an admin's "Open now"),
 // never on a milestone's start date — so `deriveDeadlines` only supplies
 // their `close`. Mentor windows are plain date ranges.
-const APPROVAL_GATED = new Set(['students', 'young_alums']);
+export const APPROVAL_GATED = new Set(['students', 'young_alums']);
 
 // cohort= need not be the first query parameter (e.g.
 // /apply/?source=timeline&cohort=students), but the link must target /apply —
@@ -181,8 +187,13 @@ export function renderTimelineError(table, err) {
 }
 
 
+// Answers can contain lines that look like markers, so `Q:`- and `\`-led
+// answer lines are backslash-escaped on serialize and unescaped on parse —
+// otherwise an ordinary save would split an answer into extra questions.
 export function faqToText(faq) {
-  return (faq || []).map((item) => `Q: ${item.q || ''}\n${item.a || ''}`).join('\n\n');
+  return (faq || [])
+    .map((item) => `Q: ${item.q || ''}\n${(item.a || '').replace(/^(Q:|\\)/gm, '\\$1')}`)
+    .join('\n\n');
 }
 
 export function textToFaq(text) {
@@ -194,13 +205,13 @@ export function textToFaq(text) {
       if (cur) entries.push(cur);
       cur = { q: line.slice(2).trim(), a: '' };
     } else if (cur) {
-      cur.a += (cur.a ? '\n' : '') + line;
+      cur.a += (cur.a ? '\n' : '') + line.replace(/^\\(?=\\|Q:)/, '');
     } else if (line.trim()) {
       throw new Error(`FAQ text must start with Q: (got: "${line.trim().slice(0, 40)}")`);
     }
   }
   if (cur) entries.push(cur);
-  return entries.map((e) => ({ q: e.q, a: e.a.trim() }));
+  return entries.map((e) => ({ q: e.q, a: e.a.trim() })).filter((e) => e.q || e.a);
 }
 
 export function renderFaq(container, cycle) {
