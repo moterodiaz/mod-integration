@@ -93,6 +93,14 @@
       <div><label for="col-2">Column 3 header</label><input id="col-2" type="text"></div>
     </div>
 
+    <h3>Form links</h3>
+    <div class="table-responsive">
+      <table id="form-links-table">
+        <thead><tr><th>Form</th><th>URL</th><th>Status</th></tr></thead>
+        <tbody id="form-links-body"></tbody>
+      </table>
+    </div>
+
     <div class="table-responsive">
       <table id="editor-table">
         <thead>
@@ -110,8 +118,9 @@
       </table>
     </div>
     <p><button id="add-row" type="button" class="secondary">Add milestone</button></p>
-    <h3>FAQ</h3><div id="faq-editor"></div>
-    <p><button id="add-faq" type="button" class="secondary">Add FAQ</button></p>
+    <h3>FAQ</h3>
+    <p><small>Start each question with <code>Q:</code>. Blank line = new paragraph.</small></p>
+    <textarea id="faq-text" rows="8" style="width:100%;max-width:40rem"></textarea>
     <label for="faq-footer">FAQ credit and contact text</label><textarea id="faq-footer" rows="3"></textarea>
 
     <p class="row-inline">
@@ -239,7 +248,7 @@
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText, formatDate, APPROVAL_GATED } from '../js/banter.js';
 
   const sb = createClient(SUPABASE_URL, ANON_KEY);
   const CYCLE_KEY = 'banter_cycle';
@@ -305,34 +314,50 @@
 
   function addRow(m = {}) {
     const cells = m.cells || [{}, {}, {}];
+    const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="date" class="m-date" value="${String(m.date || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></td>
-      <td><input type="date" class="m-end" value="${String(m.end || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></td>
-      <td><input type="text" class="m-display" value="${(m.display || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" placeholder="e.g. ~Monthly through May"></td>
-      ${[0, 1, 2].map((i) => `
-        <td>
-          <input type="text" class="m-label" data-col="${i}" value="${(cells[i]?.label || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" placeholder="label">
-          <input type="url" class="m-href" data-col="${i}" value="${(cells[i]?.href || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" placeholder="optional link">
-        </td>`).join('')}
+      <td><input type="date" class="m-date" value="${esc(m.date || '')}"></td>
+      <td><input type="date" class="m-end" value="${esc(m.end || '')}"></td>
+      <td><input type="text" class="m-display" value="${esc(m.display || '')}" placeholder="e.g. ~Monthly through May"></td>
       <td><button type="button" class="remove">Remove</button></td>
     `;
-    tr.querySelector('.remove').addEventListener('click', () => tr.remove());
+    tr.querySelector('.remove').addEventListener('click', () => { tr.remove(); refreshFormLinks(); });
+    tr.querySelector('.m-date').addEventListener('change', refreshFormLinks);
+    tr.querySelector('.m-end').addEventListener('change', refreshFormLinks);
+    const removeTd = tr.lastElementChild;
+    for (let i = 0; i < 3; i++) {
+      const cell = cells[i] || {};
+      const norm = normalizeHref(cell.href || '');
+      const isCustom = !!(norm && !FORM_LINKS.some((f) => f.path === norm));
+      const td = document.createElement('td');
+      const label = document.createElement('input');
+      label.type = 'text'; label.className = 'm-label'; label.dataset.col = i;
+      label.value = cell.label || ''; label.placeholder = 'label';
+      const sel = document.createElement('select');
+      sel.className = 'm-href-select'; sel.dataset.col = i;
+      const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = '(none)';
+      sel.appendChild(noneOpt);
+      for (const f of FORM_LINKS) {
+        const opt = document.createElement('option'); opt.value = f.path; opt.textContent = f.label;
+        sel.appendChild(opt);
+      }
+      const customOpt = document.createElement('option'); customOpt.value = 'custom'; customOpt.textContent = 'Custom URL…';
+      sel.appendChild(customOpt);
+      sel.value = isCustom ? 'custom' : (norm || '');
+      const customInput = document.createElement('input');
+      customInput.type = 'url'; customInput.className = 'm-href-custom'; customInput.dataset.col = i;
+      customInput.placeholder = 'https://…'; customInput.value = isCustom ? norm : '';
+      customInput.hidden = !isCustom;
+      sel.addEventListener('change', () => { customInput.hidden = sel.value !== 'custom'; refreshFormLinks(); });
+      customInput.addEventListener('input', refreshFormLinks);
+      td.append(label, sel, customInput);
+      tr.insertBefore(td, removeTd);
+    }
     editorRows.appendChild(tr);
   }
 
   document.getElementById('add-row').addEventListener('click', () => addRow());
-  const faqEditor = document.getElementById('faq-editor');
-  function addFaq(item = {}) {
-    const row = document.createElement('div'); row.className = 'faq-row';
-    const q = document.createElement('input'); q.className = 'faq-q'; q.placeholder = 'Question'; q.value = item.q || '';
-    const a = document.createElement('textarea'); a.className = 'faq-a'; a.placeholder = 'Answer'; a.value = item.a || '';
-    for (const [label, action] of [['↑', -1], ['↓', 1]]) { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', () => { const sibling = row[action < 0 ? 'previousElementSibling' : 'nextElementSibling']; if (sibling) faqEditor.insertBefore(row, action < 0 ? sibling : sibling.nextSibling); }); row.append(b); }
-    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove'; remove.addEventListener('click', () => row.remove());
-    row.prepend(q, a); row.append(remove); faqEditor.append(row);
-  }
-  document.getElementById('add-faq').addEventListener('click', () => addFaq());
-  function readFaqForm() { return [...faqEditor.querySelectorAll('.faq-row')].map((r) => ({ q: r.querySelector('.faq-q').value.trim(), a: r.querySelector('.faq-a').value.trim() })).filter((item) => item.q || item.a); }
 
 
   function readCycleForm() {
@@ -343,7 +368,10 @@
       display: tr.querySelector('.m-display').value.trim() || undefined,
       cells: [0, 1, 2].map((i) => {
         const label = tr.querySelector(`.m-label[data-col="${i}"]`).value.trim();
-        const href = tr.querySelector(`.m-href[data-col="${i}"]`).value.trim();
+        const sel = tr.querySelector(`.m-href-select[data-col="${i}"]`);
+        const href = sel.value === 'custom'
+          ? tr.querySelector(`.m-href-custom[data-col="${i}"]`).value.trim()
+          : sel.value;
         if (!label) return {};
         return href ? { label, href } : { label };
       }),
@@ -351,7 +379,7 @@
     return {
       year: Number(document.getElementById('cycle-year').value),
       columns,
-      faq: readFaqForm(),
+      faq: textToFaq(document.getElementById('faq-text').value),
       faq_footer: document.getElementById('faq-footer').value,
       milestones: milestones.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')),
     };
@@ -364,8 +392,13 @@
       if (!m.date) return `Row ${i + 1}: pick a date.`;
       if (m.end && m.end < m.date) return `Row ${i + 1}: end date must be on or after the start date.`;
       for (const cell of m.cells) {
-        if (cell.href && !SAFE_HREF.test(cell.href)) {
-          return `Row ${i + 1}: that link doesn't look like a valid URL.`;
+        if (cell.href) {
+          // apply/decks paths (our own forms) are always safe; everything
+          // else is validated as-is so bare tokens like `foo` are rejected.
+          const norm = normalizeHref(cell.href);
+          if (!/^(apply|decks)[/?]/.test(norm) && !SAFE_HREF.test(cell.href)) {
+            return `Row ${i + 1}: that link doesn't look like a valid URL.`;
+          }
         }
       }
     }
@@ -374,7 +407,10 @@
 
   document.getElementById('save-cycle').addEventListener('click', async () => {
     const status = document.getElementById('save-status');
-    const cycle = readCycleForm();
+    let cycle;
+    try { cycle = readCycleForm(); } catch (e) {
+      status.textContent = e.message; status.classList.add('error'); return;
+    }
     const problem = validateCycle(cycle);
     if (problem) {
       status.textContent = problem;
@@ -399,14 +435,18 @@
       return;
     }
     currentCycle = cycle;
+    renderFormLinks(cycle);
     status.textContent = `Saved at ${new Date().toLocaleTimeString()}.`;
   });
 
   document.getElementById('preview-cycle').addEventListener('click', () => {
-    const cycle = readCycleForm();
-    const problem = validateCycle(cycle);
     const wrap = document.getElementById('preview-wrap');
     const status = document.getElementById('save-status');
+    let cycle;
+    try { cycle = readCycleForm(); } catch (e) {
+      status.textContent = e.message; status.classList.add('error'); wrap.hidden = true; return;
+    }
+    const problem = validateCycle(cycle);
     if (problem) {
       status.textContent = problem;
       status.classList.add('error');
@@ -418,6 +458,116 @@
   });
 
   let currentCycle = {};
+
+  function readMilestonesFromForm() {
+    return [...editorRows.querySelectorAll('tr')].map((tr) => ({
+      date: tr.querySelector('.m-date').value,
+      end: tr.querySelector('.m-end').value || undefined,
+      cells: [0, 1, 2].map((i) => {
+        const sel = tr.querySelector(`.m-href-select[data-col="${i}"]`);
+        if (!sel) return {};
+        const href = sel.value === 'custom'
+          ? (tr.querySelector(`.m-href-custom[data-col="${i}"]`)?.value.trim() || '')
+          : sel.value;
+        return href ? { href } : {};
+      }),
+    }));
+  }
+
+  function fmtDeadlineStatus(d, today, approvalGated) {
+    if (!d) return '';
+    const { open, close } = d;
+    if (close && today > close) return 'closed';
+    // Mentee windows open on deck approval — with no open date the survey
+    // is unavailable regardless of its close, so say so rather than
+    // "closes …".
+    if (approvalGated && !open) return 'not yet open';
+    if (open && close) return `open ${formatDate(open)} – ${formatDate(close)}`;
+    if (open) return `open since ${formatDate(open)}`;
+    if (close) return `closes ${formatDate(close)}`;
+    return '';
+  }
+
+  // cohort param on a decks link (parallel to cohortFromHref for apply links).
+  const deckCohortFromHref = (href) => href?.match(/(^|\/)decks\/?\?[^#]*\bcohort=([a-z_]+)/)?.[2];
+
+  const refreshFormLinks = () =>
+    renderFormLinks({ milestones: readMilestonesFromForm(), deadlines: currentCycle.deadlines });
+
+  function renderFormLinks(cycle) {
+    const tbody = document.getElementById('form-links-body');
+    tbody.innerHTML = '';
+    const today = todayET();
+    const deadlines = deriveDeadlines(cycle.milestones || [], cycle.deadlines || {});
+
+    for (const f of FORM_LINKS) {
+      const resolved = resolveHref(f.path);
+      const cohort = cohortFromHref(f.path);
+      const deckCohort = deckCohortFromHref(f.path);
+      // isLinked: use cohort-based match so extra query params (e.g. ?source=t) don't break it.
+      const isLinked = (cycle.milestones || []).some(m => m.cells?.some(c =>
+        cohort ? cohortFromHref(c.href) === cohort
+        : deckCohort ? deckCohortFromHref(c.href) === deckCohort
+        : normalizeHref(c.href) === f.path
+      ));
+
+      const tr = document.createElement('tr');
+      const labelTd = document.createElement('td'); labelTd.textContent = f.label;
+      const urlTd = document.createElement('td');
+      const code = document.createElement('code'); code.textContent = resolved || f.path;
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button'; copyBtn.className = 'secondary'; copyBtn.textContent = 'Copy';
+      copyBtn.style.marginLeft = '.5rem';
+      copyBtn.addEventListener('click', () => navigator.clipboard.writeText(resolved || f.path).catch(() => {}));
+      urlTd.append(code, copyBtn);
+
+      const statusTd = document.createElement('td');
+      if (!isLinked) {
+        statusTd.textContent = 'not linked on timeline';
+        if (cohort === 'students' || cohort === 'young_alums') {
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button'; addBtn.className = 'secondary'; addBtn.textContent = 'Add row';
+          addBtn.style.marginLeft = '.5rem';
+          addBtn.addEventListener('click', () => {
+            const formMilestones = readMilestonesFromForm();
+            const isLinkedFn = (role) => formMilestones.some(m => m.cells?.some(c => cohortFromHref(c.href) === role));
+            const colFn = (role) => { for (const m of formMilestones) for (let i = 0; i < (m.cells || []).length; i++) if (cohortFromHref(m.cells[i]?.href) === role) return i; return -1; };
+            const sCol = colFn('students') >= 0 ? colFn('students') : 1;
+            const yCol = colFn('young_alums') >= 0 ? colFn('young_alums') : (sCol !== 2 ? 2 : 0);
+            // Each missing cohort gets its own row with its own close — never
+            // borrowed from the other cohort or defaulted to today, which
+            // would derive a window that closes before decks are approved.
+            const addFor = (role, col) => {
+              const d = currentCycle.deadlines?.[role] || {};
+              const label = role === 'students' ? 'student' : 'recent-alumni';
+              let end = d.close;
+              if (!end) {
+                const v = prompt(`Close date for the ${label} mentee survey (YYYY-MM-DD):`);
+                if (v === null) return;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) { alert('Use YYYY-MM-DD.'); return; }
+                end = v.trim();
+              }
+              if (d.open && end < d.open) { alert(`That close is before the ${label} window opened (${d.open}).`); return; }
+              if (end < today) { alert('That close is in the past — the survey would show as already closed.'); return; }
+              const cells = [{}, {}, {}];
+              cells[col] = { label: 'Mentee survey', href: `apply/?cohort=${role}` };
+              addRow({ date: d.open || today, end, cells });
+            };
+            if (!isLinkedFn('students')) addFor('students', sCol);
+            if (!isLinkedFn('young_alums')) addFor('young_alums', yCol);
+            refreshFormLinks();
+          });
+          statusTd.appendChild(addBtn);
+        }
+      } else if (cohort) {
+        statusTd.textContent = fmtDeadlineStatus(deadlines[cohort], today, APPROVAL_GATED.has(cohort)) || 'linked';
+      } else {
+        statusTd.textContent = 'linked';
+      }
+      tr.append(labelTd, urlTd, statusTd);
+      tbody.appendChild(tr);
+    }
+  }
 
   async function loadCycleIntoEditor() {
     const { data, error } = await sb.from('site_config').select('value').eq('key', CYCLE_KEY).maybeSingle();
@@ -432,11 +582,12 @@
     document.getElementById('cycle-year').value = cycle.year || '';
     [0, 1, 2].forEach((i) => { document.getElementById(`col-${i}`).value = cycle.columns?.[i] || ''; });
     document.getElementById('faq-footer').value = cycle.faq_footer || '';
-    faqEditor.replaceChildren(); (cycle.faq || []).forEach(addFaq);
+    document.getElementById('faq-text').value = faqToText(cycle.faq);
     editorRows.innerHTML = '';
     (cycle.milestones || []).forEach((m) => addRow(m));
     if (!cycle.milestones?.length) addRow();
     renderWindowStatus(cycle);
+    renderFormLinks(cycle);
   }
 
   async function saveMilestonesQuick(audience, edit) {
