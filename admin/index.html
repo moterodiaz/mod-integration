@@ -836,6 +836,7 @@
   // --- Mentor decks -----------------------------------------------------
 
   let decks = [];
+  let replacing = false;
 
   async function loadDecks() {
     const status = document.getElementById('decks-status');
@@ -899,10 +900,14 @@
         picker.accept = '.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation';
         picker.addEventListener('change', () => {
           const file = picker.files[0];
+          picker.remove();
           if (!file) return;
+          if (!/\.pptx$/i.test(file.name)) { alert('Choose a .pptx file.'); return; }
           if (!confirm(`Replace "${d.display_name || d.object_path}" with ${file.name}? It will need re-approval.`)) return;
           replaceDeck(d, file);
         });
+        picker.hidden = true;
+        document.body.appendChild(picker);
         picker.click();
       });
       actionTd.appendChild(replaceBtn);
@@ -935,40 +940,46 @@
   });
 
   async function replaceDeck(d, file) {
+    if (replacing) return;
+    replacing = true;
     const status = document.getElementById('import-status');
     const results = document.getElementById('import-results');
-    results.innerHTML = '';
-    status.textContent = `Replacing ${d.object_path}…`;
-    const li = document.createElement('li');
-    // Reset the review flag BEFORE uploading the new file, not after. If
-    // this write fails, the old, still-approved file in storage is
-    // untouched -- the safe failure direction. Uploading first and
-    // resetting after risks the opposite: new, unreviewed content left
-    // marked approved and publicly visible if the second request fails.
-    const { error: dbError } = await sb.from('deck_publications')
-      .update({ approved: false, approved_at: null, generated_at: new Date().toISOString() })
-      .eq('id', d.id);
-    if (dbError) {
-      li.textContent = `Couldn't start the replacement (${dbError.message}). Nothing was changed.`;
+    try {
+      results.innerHTML = '';
+      status.textContent = `Replacing ${d.object_path}…`;
+      const li = document.createElement('li');
+      // Reset the review flag BEFORE uploading the new file, not after. If
+      // this write fails, the old, still-approved file in storage is
+      // untouched -- the safe failure direction. Uploading first and
+      // resetting after risks the opposite: new, unreviewed content left
+      // marked approved and publicly visible if the second request fails.
+      const { error: dbError } = await sb.from('deck_publications')
+        .update({ approved: false, approved_at: null, generated_at: new Date().toISOString() })
+        .eq('id', d.id);
+      if (dbError) {
+        li.textContent = `Couldn't start the replacement (${dbError.message}). Nothing was changed.`;
+        results.appendChild(li);
+        status.textContent = 'Replacement failed.';
+        return;
+      }
+      const { error: uploadError } = await sb.storage.from('banter-decks')
+        .update(d.object_path, file, {
+          upsert: true,
+          contentType: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        });
+      if (uploadError) {
+        li.textContent = `Marked for review, but the file upload failed (${uploadError.message}). Try again.`;
+        results.appendChild(li);
+        status.textContent = 'Upload failed.';
+        return;
+      }
+      li.textContent = `replaced ${d.object_path}, needs re-approval.`;
       results.appendChild(li);
-      status.textContent = 'Replacement failed.';
-      return;
+      status.textContent = 'Done.';
+    } finally {
+      replacing = false;
+      loadDecks();
     }
-    const { error: uploadError } = await sb.storage.from('banter-decks')
-      .update(d.object_path, file, {
-        upsert: true,
-        contentType: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      });
-    if (uploadError) {
-      li.textContent = `Marked for review, but the file upload failed (${uploadError.message}). Try again.`;
-      results.appendChild(li);
-      status.textContent = 'Upload failed.';
-      return;
-    }
-    li.textContent = `replaced ${d.object_path}, needs re-approval.`;
-    results.appendChild(li);
-    status.textContent = 'Done.';
-    loadDecks();
   }
 
   document.getElementById('generate-decks').addEventListener('click', async () => {
