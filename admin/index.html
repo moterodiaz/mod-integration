@@ -169,6 +169,7 @@
     <h3>Import edited decks</h3>
     <p>To fix a deck, download it, edit it, then click <strong>Replace&hellip;</strong> on that deck's row
       and choose the corrected .pptx. The file name doesn't matter. Replacing resets approval.</p>
+    <input id="replace-picker" type="file" hidden accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation">
     <p id="import-status" role="status" aria-live="polite"></p>
     <ul id="import-results"></ul>
 
@@ -837,6 +838,7 @@
 
   let decks = [];
   let replacing = false;
+  let replaceTarget = null;
 
   async function loadDecks() {
     const status = document.getElementById('decks-status');
@@ -892,23 +894,12 @@
       }
       const replaceBtn = document.createElement('button');
       replaceBtn.type = 'button';
+      replaceBtn.className = 'replace-btn';
       replaceBtn.textContent = 'Replace…';
       replaceBtn.style.marginLeft = '.5rem';
       replaceBtn.addEventListener('click', () => {
-        const picker = document.createElement('input');
-        picker.type = 'file';
-        picker.accept = '.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation';
-        picker.addEventListener('change', () => {
-          const file = picker.files[0];
-          picker.remove();
-          if (!file) return;
-          if (!/\.pptx$/i.test(file.name)) { alert('Choose a .pptx file.'); return; }
-          if (!confirm(`Replace "${d.display_name || d.object_path}" with ${file.name}? It will need re-approval.`)) return;
-          replaceDeck(d, file);
-        });
-        picker.hidden = true;
-        document.body.appendChild(picker);
-        picker.click();
+        replaceTarget = d;
+        document.getElementById('replace-picker').click();
       });
       actionTd.appendChild(replaceBtn);
       tr.appendChild(actionTd);
@@ -939,9 +930,21 @@
     status.textContent = `Started ${started} download(s).`;
   });
 
+  document.getElementById('replace-picker').addEventListener('change', () => {
+    const picker = document.getElementById('replace-picker');
+    const file = picker.files[0];
+    const target = replaceTarget;
+    picker.value = '';
+    if (!file || !target) return;
+    if (!/\.pptx$/i.test(file.name)) { alert('Choose a .pptx file.'); return; }
+    if (!confirm(`Replace "${target.display_name || target.object_path}" with ${file.name}? It will need re-approval.`)) return;
+    replaceDeck(target, file);
+  });
+
   async function replaceDeck(d, file) {
-    if (replacing) return;
+    if (replacing) { document.getElementById('import-status').textContent = 'Another replacement is still running.'; return; }
     replacing = true;
+    document.querySelectorAll('.replace-btn').forEach(b => b.disabled = true);
     const status = document.getElementById('import-status');
     const results = document.getElementById('import-results');
     try {
@@ -978,6 +981,7 @@
       status.textContent = 'Done.';
     } finally {
       replacing = false;
+      document.querySelectorAll('.replace-btn').forEach(b => b.disabled = false);
       loadDecks();
     }
   }
