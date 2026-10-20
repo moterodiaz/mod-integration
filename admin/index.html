@@ -167,17 +167,9 @@
     <p id="download-decks-status" role="status" aria-live="polite"></p>
 
     <h3>Import edited decks</h3>
-    <p>If a deck has a mistake, download it above. Fix it in PowerPoint or Keynote. Select the corrected file
-      below to replace it.</p>
-    <p><strong>Each file name must exactly match the name of the deck you downloaded.</strong> The system
-      matches files by name only. If a file does not match an existing deck, the system skips it. New decks
-      come only from the Generate mentor decks button above. Importing a deck resets its approval, the same
-      as regenerating it.</p>
-    <input id="import-decks-input" type="file" multiple
-      accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation">
-    <p class="row-inline">
-      <button id="import-decks-btn" type="button">Import selected files</button>
-    </p>
+    <p>To fix a deck, download it, edit it, then click <strong>Replace&hellip;</strong> on that deck's row
+      and choose the corrected .pptx. The file name doesn't matter. Replacing resets approval.</p>
+    <input id="replace-picker" type="file" hidden accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation">
     <p id="import-status" role="status" aria-live="polite"></p>
     <ul id="import-results"></ul>
 
@@ -845,6 +837,8 @@
   // --- Mentor decks -----------------------------------------------------
 
   let decks = [];
+  let replacing = false;
+  let replaceTarget = null;
 
   async function loadDecks() {
     const status = document.getElementById('decks-status');
@@ -898,6 +892,16 @@
         });
         actionTd.appendChild(approveBtn);
       }
+      const replaceBtn = document.createElement('button');
+      replaceBtn.type = 'button';
+      replaceBtn.className = 'replace-btn';
+      replaceBtn.textContent = 'Replace…';
+      replaceBtn.style.marginLeft = '.5rem';
+      replaceBtn.addEventListener('click', () => {
+        replaceTarget = d;
+        document.getElementById('replace-picker').click();
+      });
+      actionTd.appendChild(replaceBtn);
       tr.appendChild(actionTd);
       tbody.appendChild(tr);
     }
@@ -926,30 +930,27 @@
     status.textContent = `Started ${started} download(s).`;
   });
 
-  document.getElementById('import-decks-btn').addEventListener('click', async () => {
-    const input = document.getElementById('import-decks-input');
-    const files = [...input.files];
+  document.getElementById('replace-picker').addEventListener('change', () => {
+    const picker = document.getElementById('replace-picker');
+    const file = picker.files[0];
+    const target = replaceTarget;
+    picker.value = '';
+    if (!file || !target) return;
+    if (!/\.pptx$/i.test(file.name)) { alert('Choose a .pptx file.'); return; }
+    if (!confirm(`Replace "${target.display_name || target.object_path}" with ${file.name}? It will need re-approval.`)) return;
+    replaceDeck(target, file);
+  });
+
+  async function replaceDeck(d, file) {
+    if (replacing) { document.getElementById('import-status').textContent = 'Another replacement is still running.'; return; }
+    replacing = true;
+    document.querySelectorAll('.replace-btn').forEach(b => b.disabled = true);
     const status = document.getElementById('import-status');
     const results = document.getElementById('import-results');
-    results.innerHTML = '';
-    if (!files.length) { status.textContent = 'Choose one or more .pptx files first.'; return; }
-    status.textContent = `Importing ${files.length} file(s)…`;
-
-    // Match by the trailing filename, not the full storage path -- that's
-    // all a browser download preserves, and admins never see or edit the
-    // cohort-prefixed object_path itself.
-    const byName = new Map(decks.map((d) => [d.object_path.split('/').pop(), d]));
-
-    let replaced = 0, skipped = 0;
-    for (const file of files) {
+    try {
+      results.innerHTML = '';
+      status.textContent = `Replacing ${d.object_path}…`;
       const li = document.createElement('li');
-      const match = byName.get(file.name);
-      if (!match) {
-        li.textContent = `${file.name}: no matching deck, skipped.`;
-        skipped++;
-        results.appendChild(li);
-        continue;
-      }
       // Reset the review flag BEFORE uploading the new file, not after. If
       // this write fails, the old, still-approved file in storage is
       // untouched -- the safe failure direction. Uploading first and
@@ -957,30 +958,33 @@
       // marked approved and publicly visible if the second request fails.
       const { error: dbError } = await sb.from('deck_publications')
         .update({ approved: false, approved_at: null, generated_at: new Date().toISOString() })
-        .eq('id', match.id);
+        .eq('id', d.id);
       if (dbError) {
-        li.textContent = `${file.name}: couldn't start the import (${dbError.message}). Nothing was changed.`;
+        li.textContent = `Couldn't start the replacement (${dbError.message}). Nothing was changed.`;
         results.appendChild(li);
-        continue;
+        status.textContent = 'Replacement failed.';
+        return;
       }
       const { error: uploadError } = await sb.storage.from('banter-decks')
-        .update(match.object_path, file, {
+        .update(d.object_path, file, {
           upsert: true,
           contentType: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         });
       if (uploadError) {
-        li.textContent = `${file.name}: marked for review, but the file upload failed (${uploadError.message}). Try importing again.`;
+        li.textContent = `Marked for review, but the file upload failed (${uploadError.message}). Try again.`;
         results.appendChild(li);
-        continue;
+        status.textContent = 'Upload failed.';
+        return;
       }
-      li.textContent = `${file.name}: replaced ${match.object_path}, needs re-approval.`;
+      li.textContent = `replaced ${d.object_path}, needs re-approval.`;
       results.appendChild(li);
-      replaced++;
+      status.textContent = 'Done.';
+    } finally {
+      replacing = false;
+      document.querySelectorAll('.replace-btn').forEach(b => b.disabled = false);
+      loadDecks();
     }
-    status.textContent = `${replaced} replaced, ${skipped} skipped.`;
-    input.value = '';
-    loadDecks();
-  });
+  }
 
   document.getElementById('generate-decks').addEventListener('click', async () => {
     const status = document.getElementById('decks-pipeline-status');
