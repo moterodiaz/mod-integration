@@ -766,6 +766,9 @@
 
   async function dispatchWorkflow(workflow, send_emails, action) {
     const { data: { session } } = await sb.auth.getSession();
+    // Signed out, or a failed token refresh, leaves session null -- without
+    // this check that's a bare TypeError instead of a message the admin can act on.
+    if (!session) return { ok: false, body: { error: 'Not signed in. Reload and sign in again.' } };
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/dispatch-workflow`, {
         method: 'POST',
@@ -791,8 +794,18 @@
       bar = document.createElement('progress');
       status.before(bar);
     }
+    // Consecutive failed status checks, not total ticks -- a long-running
+    // workflow that keeps reporting fine stays watched indefinitely; one that
+    // can't be checked at all stops polling instead of running forever.
+    let consecutiveFailures = 0;
     const tick = async () => {
       const { ok, body } = await workflowStatus(workflow);
+      consecutiveFailures = ok ? 0 : consecutiveFailures + 1;
+      if (consecutiveFailures >= 12) {
+        bar.removeAttribute('value');
+        status.textContent = `Couldn't check progress: ${body.error || 'unknown error'}. Giving up after repeated failures -- reload to retry.`;
+        return;
+      }
       const run = ok ? body.run : null;
       const steps = (run && body.steps) || [];
       if (!run || new Date(run.created_at) < since) {
@@ -831,7 +844,10 @@
   // After a reload, pick the bar back up if a run is still going.
   async function resumeWatch(workflow, status, onDone) {
     const { ok, body } = await workflowStatus(workflow);
-    if (ok && body.run && body.run.status !== 'completed') watchWorkflow(workflow, status, new Date(0), onDone);
+    // Was silently swallowed -- an admin reloading mid-run saw a blank status
+    // with no way to tell a run was live from a check that failed outright.
+    if (!ok) { status.textContent = `Couldn't check for a running workflow: ${body.error || 'unknown error'}.`; return; }
+    if (body.run && body.run.status !== 'completed') watchWorkflow(workflow, status, new Date(0), onDone);
   }
 
   // --- Mentor decks -----------------------------------------------------
@@ -844,7 +860,10 @@
     const status = document.getElementById('decks-status');
     status.textContent = 'Loading…';
     const { data, error } = await sb.from('deck_publications').select('*').order('generated_at', { ascending: false });
-    if (error) { status.textContent = `Couldn't load decks: ${error.message}`; return; }
+    // On error, clear the stale list instead of leaving it displayed --
+    // otherwise "Download all decks" can act on a list that no longer
+    // reflects what loadDecks() last actually confirmed.
+    if (error) { status.textContent = `Couldn't load decks: ${error.message}`; decks = []; renderDecks(); return; }
     decks = data;
     renderDecks();
   }
@@ -882,10 +901,14 @@
         approveBtn.textContent = 'Approve';
         approveBtn.style.marginLeft = '.5rem';
         approveBtn.addEventListener('click', async () => {
-          const { error } = await sb.from('deck_publications')
+          const { data, error } = await sb.from('deck_publications')
             .update({ approved: true, approved_at: new Date().toISOString() })
-            .eq('id', d.id);
+            .eq('id', d.id)
+            .select();
           if (error) { alert(`Couldn't approve: ${error.message}`); return; }
+          // A denied column grant or RLS filter returns 0 rows with NO error --
+          // without .select() this would silently report success.
+          if (!data.length) { alert("Couldn't approve: no row was updated (check permissions)."); return; }
           await maybeAutoOpenWindow(d.audience);
           loadDecks();
           loadCycleIntoEditor();
@@ -956,11 +979,21 @@
       // untouched -- the safe failure direction. Uploading first and
       // resetting after risks the opposite: new, unreviewed content left
       // marked approved and publicly visible if the second request fails.
-      const { error: dbError } = await sb.from('deck_publications')
+      const { data: dbData, error: dbError } = await sb.from('deck_publications')
         .update({ approved: false, approved_at: null, generated_at: new Date().toISOString() })
-        .eq('id', d.id);
+        .eq('id', d.id)
+        .select();
       if (dbError) {
         li.textContent = `Couldn't start the replacement (${dbError.message}). Nothing was changed.`;
+        results.appendChild(li);
+        status.textContent = 'Replacement failed.';
+        return;
+      }
+      // A denied column grant or RLS filter returns 0 rows with NO error --
+      // without .select() this would upload the new file over an old row
+      // that was never actually reset, leaving it approved and public.
+      if (!dbData.length) {
+        li.textContent = "Couldn't start the replacement (no row was updated -- check permissions). Nothing was changed.";
         results.appendChild(li);
         status.textContent = 'Replacement failed.';
         return;
@@ -1004,12 +1037,15 @@
     const status = document.getElementById('matches-status');
     status.textContent = 'Loading…';
     const { data: matchRows, error } = await sb.from('matches').select('*').order('created_at', { ascending: false });
-    if (error) { status.textContent = `Couldn't load matches: ${error.message}`; return; }
+    // Clear the stale list on error instead of leaving it displayed --
+    // otherwise "Approve & send emails" could fire against matches no
+    // longer shown on screen.
+    if (error) { status.textContent = `Couldn't load matches: ${error.message}`; matches = []; matchPeople = {}; renderMatches(); return; }
     const ids = [...new Set(matchRows.flatMap((m) => [m.mentor, m.mentee]))];
     const { data: people, error: lookupError } = ids.length
       ? await sb.from('survey_responses').select('id,name,email').in('id', ids)
       : { data: [], error: null };
-    if (lookupError) { status.textContent = `Couldn't load match names: ${lookupError.message}`; return; }
+    if (lookupError) { status.textContent = `Couldn't load match names: ${lookupError.message}`; matches = []; matchPeople = {}; renderMatches(); return; }
     matches = matchRows;
     matchPeople = Object.fromEntries((people || []).map((p) => [p.id, p]));
     renderMatches();
