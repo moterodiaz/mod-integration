@@ -863,7 +863,7 @@
     // On error, clear the stale list instead of leaving it displayed --
     // otherwise "Download all decks" can act on a list that no longer
     // reflects what loadDecks() last actually confirmed.
-    if (error) { status.textContent = `Couldn't load decks: ${error.message}`; decks = []; renderDecks(); return; }
+    if (error) { decks = []; renderDecks(); status.textContent = `Couldn't load decks: ${error.message}`; return; }
     decks = data;
     renderDecks();
   }
@@ -1040,12 +1040,12 @@
     // Clear the stale list on error instead of leaving it displayed --
     // otherwise "Approve & send emails" could fire against matches no
     // longer shown on screen.
-    if (error) { status.textContent = `Couldn't load matches: ${error.message}`; matches = []; matchPeople = {}; renderMatches(); return; }
+    if (error) { matches = []; matchPeople = {}; renderMatches(); status.textContent = `Couldn't load matches: ${error.message}`; return; }
     const ids = [...new Set(matchRows.flatMap((m) => [m.mentor, m.mentee]))];
     const { data: people, error: lookupError } = ids.length
       ? await sb.from('survey_responses').select('id,name,email').in('id', ids)
       : { data: [], error: null };
-    if (lookupError) { status.textContent = `Couldn't load match names: ${lookupError.message}`; matches = []; matchPeople = {}; renderMatches(); return; }
+    if (lookupError) { matches = []; matchPeople = {}; renderMatches(); status.textContent = `Couldn't load match names: ${lookupError.message}`; return; }
     matches = matchRows;
     matchPeople = Object.fromEntries((people || []).map((p) => [p.id, p]));
     renderMatches();

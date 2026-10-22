@@ -98,9 +98,14 @@ storage_policy as (
 
 -- Decks are private; the public /decks/ page only ever sees signed URLs
 -- minted by the mentor-decks edge function under the service-role key.
+-- roles = {public} (no TO clause) applies to anon too -- checking only
+-- 'anon' = any(roles) would miss that and false-PASS.
 storage_negative as (
   select 'negative policy: anon has no storage.objects policy' as expectation,
-    not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and 'anon' = any(roles)) as ok
+    not exists (
+      select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
+      and ('anon' = any(roles) or 'public' = any(roles))
+    ) as ok
 ),
 
 -- Three failure modes that would be invisible to every check above:
