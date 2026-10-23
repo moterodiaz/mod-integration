@@ -257,16 +257,24 @@
     const email = document.getElementById('login-email').value.trim();
     const status = document.getElementById('login-status');
     status.textContent = 'Sending…';
-    const { error } = await sb.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: location.origin + location.pathname,
-        shouldCreateUser: false,
-      },
-    });
-    status.textContent = error
-      ? `Couldn't send a link: ${error.message}`
-      : `Check ${email} for a sign-in link.`;
+    try {
+      const { error } = await sb.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: location.origin + location.pathname,
+          shouldCreateUser: false,
+        },
+      });
+      status.textContent = error
+        ? `Couldn't send a link: ${error.message}`
+        : `Check ${email} for a sign-in link.`;
+    } catch (err) {
+      // signInWithOtp can reject outright (network blip, blocked request)
+      // instead of resolving to {error} -- without this catch that left
+      // status stuck on "Sending..." forever with nothing shown.
+      console.error('signInWithOtp threw', err);
+      status.textContent = `Couldn't send a link: ${err.message || err}`;
+    }
   });
 
   for (const id of ['sign-out-1', 'sign-out-2']) {
