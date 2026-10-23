@@ -12,8 +12,8 @@
     h1 { font-size: 2.3rem; line-height: 1.2; }
     a.back { display: inline-block; margin-bottom: 1rem; color: #174b66; }
     label { display: block; margin-top: 1.5rem; font-weight: 600; }
-    select, button { font: inherit; width: 100%; padding: .7rem; border: 1px solid #71818a; border-radius: .25rem; }
-    select { background: white; color: #172d3b; }
+    input, select, button { font: inherit; width: 100%; padding: .7rem; border: 1px solid #71818a; border-radius: .25rem; }
+    input, select { background: white; color: #172d3b; }
     button { margin-top: 2rem; background: #174b66; color: white; cursor: pointer; min-height: 48px; }
     button:disabled { opacity: .65; cursor: wait; }
     :focus-visible { outline: 3px solid #ad5300; outline-offset: 3px; }
@@ -23,10 +23,9 @@
     ul#mentors li .name { flex: 1; }
     ul#mentors li select { width: 5.5rem; margin: 0; }
     #status { min-height: 3rem; }
-    #form-error { display: none; color: #a00; font-weight: 600; margin-top: 1rem; }
-    #form-error:not(:empty) { display: block; }
+    #form-error, #lookup-error { display: none; color: #a00; font-weight: 600; margin-top: 1rem; }
+    #form-error:not(:empty), #lookup-error:not(:empty) { display: block; }
     #closed-notice { display: none; background: #fff3e0; border: 1px solid #d98c00; border-radius: .25rem; padding: 1rem; margin-top: 1.5rem; }
-    #no-token { display: none; }
   </style>
 </head>
 <body>
@@ -35,14 +34,22 @@
   <p>Olin Alumni · Banter</p>
   <h1>Pick your mentors.</h1>
 
-  <div id="no-token">
-    <p>Your personal selection link was emailed to you when you signed up. Can't find it? Email
-      <a href="mailto:banter@olin.edu">banter@olin.edu</a>.</p>
+  <div id="lookup">
+    <p>Enter the email and last name you used to sign up.</p>
+    <form id="lookup-form">
+      <label for="lookup-email">Email address</label>
+      <input id="lookup-email" type="email" autocomplete="email" required>
+      <label for="lookup-surname">Last name</label>
+      <input id="lookup-surname" type="text" autocomplete="family-name" required>
+      <button id="lookup-submit" type="submit">Find my mentors</button>
+      <p id="lookup-status" role="status" aria-live="polite" tabindex="-1"></p>
+      <p id="lookup-error" role="alert" tabindex="-1"></p>
+    </form>
   </div>
 
   <div id="loaded" style="display:none">
     <p>Rank the mentors you'd be happy to banter with, 1 for your top choice. You can change this until the
-      deadline below.</p>
+      deadline below by re-entering your email and last name here.</p>
     <p id="mentee-line"></p>
 
     <div id="closed-notice" role="alert">
@@ -64,139 +71,170 @@
 <script type="module">
   import { SUPABASE_URL, ANON_KEY } from '../js/banter.js';
 
-  const token = new URLSearchParams(location.search).get('t');
-  if (!token) {
-    document.getElementById('no-token').style.display = 'block';
-  } else {
-    init(token);
+  const lookupDiv = document.getElementById('lookup');
+  const lookupForm = document.getElementById('lookup-form');
+  const lookupStatus = document.getElementById('lookup-status');
+  const lookupError = document.getElementById('lookup-error');
+  const lookupSubmit = document.getElementById('lookup-submit');
+
+  const loaded = document.getElementById('loaded');
+  const menteeLine = document.getElementById('mentee-line');
+  const closedNotice = document.getElementById('closed-notice');
+  const form = document.getElementById('choices-form');
+  const list = document.getElementById('mentors');
+  const status = document.getElementById('status');
+  const errorBox = document.getElementById('form-error');
+  const button = document.getElementById('submit');
+
+  // Set once a lookup succeeds; the final submit re-sends them since the
+  // backend has no session of its own -- every request re-proves identity.
+  let session = null;
+
+  async function callChoices(payload) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/choices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20000),
+    });
+    const body = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, body };
   }
 
-  async function init(t) {
-    const loaded = document.getElementById('loaded');
-    const menteeLine = document.getElementById('mentee-line');
-    const closedNotice = document.getElementById('closed-notice');
-    const form = document.getElementById('choices-form');
-    const list = document.getElementById('mentors');
-    const status = document.getElementById('status');
-    const errorBox = document.getElementById('form-error');
-    const button = document.getElementById('submit');
-
-    let mentors = [];
-
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/choices?t=${encodeURIComponent(t)}`, {
-        headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
-        signal: AbortSignal.timeout(20000),
-      });
-      if (res.status === 403) {
-        loaded.style.display = 'block';
-        form.style.display = 'none';
-        closedNotice.style.display = 'block';
-        return;
-      }
-      if (!res.ok) throw new Error(`Supabase ${res.status}`);
-      const body = await res.json();
-      mentors = body.mentors || [];
-      menteeLine.textContent = `Hi ${body.mentee?.name || 'there'}. Deadline: `
-        + (body.window?.close ? body.window.close : 'not set');
-
-      const rankByMentor = {};
-      (body.current || []).forEach((id, i) => { rankByMentor[id] = i + 1; });
-
-      for (const m of mentors) {
-        const li = document.createElement('li');
-        const span = document.createElement('span');
-        span.className = 'name';
-        span.textContent = `${m.name} '${String(m.grad_year).slice(-2)}`;
-        const select = document.createElement('select');
-        select.dataset.id = m.id;
-        select.setAttribute('aria-label', `Rank for ${m.name}`);
-        const blank = document.createElement('option');
-        blank.value = '';
-        blank.textContent = '—';
-        select.appendChild(blank);
-        for (let r = 1; r <= mentors.length; r++) {
-          const opt = document.createElement('option');
-          opt.value = String(r);
-          opt.textContent = String(r);
-          select.appendChild(opt);
-        }
-        if (rankByMentor[m.id]) select.value = String(rankByMentor[m.id]);
-        li.append(span, select);
-        list.appendChild(li);
-      }
-
-      loaded.style.display = 'block';
-      button.disabled = false;
-    } catch (err) {
-      loaded.style.display = 'block';
-      form.style.display = 'none';
-      errorBox.textContent = "We couldn't load your mentor list just now. Please try reloading, or email banter@olin.edu.";
+  lookupForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    lookupError.textContent = '';
+    const email = document.getElementById('lookup-email').value.trim();
+    const surname = document.getElementById('lookup-surname').value.trim();
+    if (!email || !surname) {
+      lookupError.textContent = 'Enter your email and last name.';
+      lookupError.focus();
       return;
     }
 
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      errorBox.textContent = '';
-      const picks = [...list.querySelectorAll('select')]
-        .map((s) => ({ id: s.dataset.id, rank: s.value ? Number(s.value) : null }))
-        .filter((p) => p.rank !== null);
+    lookupSubmit.disabled = true;
+    lookupStatus.textContent = 'Looking you up…';
+    let result;
+    try {
+      result = await callChoices({ email, surname });
+    } catch {
+      lookupStatus.textContent = '';
+      lookupError.textContent = "We couldn't reach the server. Please try again.";
+      lookupError.focus();
+      lookupSubmit.disabled = false;
+      return;
+    }
+    lookupStatus.textContent = '';
 
-      if (!picks.length) {
-        errorBox.textContent = 'Rank at least one mentor.';
-        errorBox.focus();
-        return;
-      }
-      const ranks = picks.map((p) => p.rank).sort((a, b) => a - b);
-      const contiguous = ranks.every((r, i) => r === i + 1);
-      const unique = new Set(ranks).size === ranks.length;
-      if (!unique || !contiguous) {
-        errorBox.textContent = 'Ranks must be unique, starting at 1 with no gaps.';
-        errorBox.focus();
-        return;
-      }
+    if (!result.ok) {
+      lookupError.textContent = result.body.error || "We couldn't find a signup with that email and last name.";
+      lookupError.focus();
+      lookupSubmit.disabled = false;
+      return;
+    }
 
-      picks.sort((a, b) => a.rank - b.rank);
-      const choices = picks.map((p) => p.id);
-      const requestBody = JSON.stringify({ t, choices });
-      if (new TextEncoder().encode(requestBody).length > 32768) {
-        errorBox.textContent = 'Your selection is too long.';
-        errorBox.focus();
-        return;
-      }
+    session = { email, surname };
+    renderRoster(result.body);
+    lookupDiv.style.display = 'none';
+    loaded.style.display = 'block';
+  });
 
-      button.disabled = true;
-      status.textContent = 'Submitting your choices…';
-      try {
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/choices`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: ANON_KEY,
-            Authorization: `Bearer ${ANON_KEY}`,
-          },
-          body: requestBody,
-          signal: AbortSignal.timeout(20000),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || !result.success) {
-          status.textContent = '';
-          errorBox.textContent = result.error
-            || 'We could not confirm your choices. Please try again, or contact the organizers if this continues.';
-          errorBox.focus();
-          return;
-        }
-        status.textContent = 'Thank you. Your choices have been recorded. You may revise them until the deadline.';
-        status.focus();
-      } catch {
-        status.textContent = '';
-        errorBox.textContent = 'We could not confirm your choices. Please try again, or contact the organizers if this continues.';
-        errorBox.focus();
-      } finally {
-        button.disabled = false;
+  function renderRoster(body) {
+    const mentors = body.mentors || [];
+    menteeLine.textContent = `Hi ${body.mentee?.name || 'there'}. Deadline: `
+      + (body.window?.close ? body.window.close : 'not set');
+
+    const rankByMentor = {};
+    (body.current || []).forEach((id, i) => { rankByMentor[id] = i + 1; });
+
+    list.innerHTML = '';
+    for (const m of mentors) {
+      const li = document.createElement('li');
+      const span = document.createElement('span');
+      span.className = 'name';
+      span.textContent = `${m.name} '${String(m.grad_year).slice(-2)}`;
+      const select = document.createElement('select');
+      select.dataset.id = m.id;
+      select.setAttribute('aria-label', `Rank for ${m.name}`);
+      const blank = document.createElement('option');
+      blank.value = '';
+      blank.textContent = '—';
+      select.appendChild(blank);
+      for (let r = 1; r <= mentors.length; r++) {
+        const opt = document.createElement('option');
+        opt.value = String(r);
+        opt.textContent = String(r);
+        select.appendChild(opt);
       }
-    });
+      if (rankByMentor[m.id]) select.value = String(rankByMentor[m.id]);
+      li.append(span, select);
+      list.appendChild(li);
+    }
+
+    button.disabled = false;
   }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.textContent = '';
+    const picks = [...list.querySelectorAll('select')]
+      .map((s) => ({ id: s.dataset.id, rank: s.value ? Number(s.value) : null }))
+      .filter((p) => p.rank !== null);
+
+    if (!picks.length) {
+      errorBox.textContent = 'Rank at least one mentor.';
+      errorBox.focus();
+      return;
+    }
+    const ranks = picks.map((p) => p.rank).sort((a, b) => a - b);
+    const contiguous = ranks.every((r, i) => r === i + 1);
+    const unique = new Set(ranks).size === ranks.length;
+    if (!unique || !contiguous) {
+      errorBox.textContent = 'Ranks must be unique, starting at 1 with no gaps.';
+      errorBox.focus();
+      return;
+    }
+
+    picks.sort((a, b) => a.rank - b.rank);
+    const choices = picks.map((p) => p.id);
+    const requestBody = JSON.stringify({ ...session, choices });
+    if (new TextEncoder().encode(requestBody).length > 32768) {
+      errorBox.textContent = 'Your selection is too long.';
+      errorBox.focus();
+      return;
+    }
+
+    button.disabled = true;
+    status.textContent = 'Submitting your choices…';
+    let result;
+    try {
+      result = await callChoices({ ...session, choices });
+    } catch {
+      status.textContent = '';
+      errorBox.textContent = 'We could not confirm your choices. Please try again, or contact the organizers if this continues.';
+      errorBox.focus();
+      button.disabled = false;
+      return;
+    }
+
+    if (result.status === 403) {
+      status.textContent = '';
+      form.style.display = 'none';
+      closedNotice.style.display = 'block';
+      return;
+    }
+    if (!result.ok || !result.body.success) {
+      status.textContent = '';
+      errorBox.textContent = result.body.error
+        || 'We could not confirm your choices. Please try again, or contact the organizers if this continues.';
+      errorBox.focus();
+      button.disabled = false;
+      return;
+    }
+    status.textContent = 'Thank you. Your choices have been recorded. You may revise them until the deadline.';
+    status.focus();
+    button.disabled = false;
+  });
 </script>
 </body>
 </html>
