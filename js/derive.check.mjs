@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDeadlines, todayET, normalizeHref, resolveHref, cohortFromHref, textToFaq, faqToText } from './banter.js';
+import { deriveDeadlines, deriveChoicesWindow, todayET, normalizeHref, resolveHref, cohortFromHref, textToFaq, faqToText } from './banter.js';
 const link = (role) => ({ href: `/apply/?cohort=${role}` });
 const previous = {
   students: { open: '2026-08-20' },
@@ -118,3 +118,15 @@ assert.throws(() => textToFaq('no questions at all'), /Q:/);
 assert.deepEqual(textToFaq(''), []);
 assert.deepEqual(textToFaq('\n\n'), []);
 console.log('textToFaq/faqToText checks passed');
+
+// deriveChoicesWindow keys off path, not cohort — one shared window.
+const choicesWindow = deriveChoicesWindow([
+  { date: '2026-09-01', cells: [{ href: 'apply/?cohort=students' }] },
+  { date: '2026-10-01', end: '2026-10-20', cells: [{ href: 'choices/' }] },
+  { date: '2026-11-01', cells: [{ href: 'decks/?cohort=students' }] },
+]);
+assert.deepEqual(choicesWindow, { open: '2026-10-01', close: '2026-10-20' });
+assert.equal(deriveChoicesWindow([{ date: '2026-09-01', cells: [{ href: 'apply/?cohort=students' }] }]), null);
+assert.equal(deriveChoicesWindow([]), null);
+assert.ok(resolveHref('choices/?t=abc'));
+console.log('deriveChoicesWindow checks passed');

@@ -21,6 +21,9 @@ export const FORM_LINKS = [
   { label: 'Recent-alumni mentee survey', path: 'apply/?cohort=young_alums' },
   { label: 'Mentor profiles (students)', path: 'decks/?cohort=students' },
   { label: 'Mentor profiles (recent alumni)', path: 'decks/?cohort=young_alums' },
+  // No ?cohort= — cohort comes from the emailed token, and a cohort= param
+  // here would be wrongly picked up by cohortFromHref as a signup deadline.
+  { label: 'Mentor selection', path: 'choices/' },
 ];
 
 export const SITE_ROOT = new URL('../', import.meta.url);
@@ -31,7 +34,7 @@ export const SITE_ROOT = new URL('../', import.meta.url);
 export function normalizeHref(href) {
   if (!href) return href;
   const m = href.match(
-    /^(?:(?:https?:\/\/)?(?:www\.)?olinalumni\.org)?(?:\/resources\/banter)?\/?((apply|decks)[/?][^#]*)(#.*)?$/
+    /^(?:(?:https?:\/\/)?(?:www\.)?olinalumni\.org)?(?:\/resources\/banter)?\/?((apply|decks|choices)[/?][^#]*)(#.*)?$/
   );
   if (!m) return href;
   return m[1] + (m[3] || '');
@@ -43,7 +46,7 @@ export const resolveHref = (href) => {
   // absolute http(s)/mailto, root-relative, and the site-relative apply/decks
   // forms — a bare token like `foo` stays plain text instead of becoming a
   // broken link to SITE_ROOT/foo.
-  if (!n || !(SAFE_HREF.test(n) || /^(apply|decks)[/?]/.test(n))) return null;
+  if (!n || !(SAFE_HREF.test(n) || /^(apply|decks|choices)[/?]/.test(n))) return null;
   try { return new URL(n, SITE_ROOT).href; }
   catch (_) { return null; }
 };
@@ -83,6 +86,48 @@ export function deriveDeadlines(milestones, prev = {}) {
   }
   if (derived.mentor_alums) derived.alumni = derived.mentor_alums;
   return derived;
+}
+
+// Mirrors cohortFromHref but for /decks/?cohort=... links — the "Mentor
+// Profiles Public" milestone row uses these, not /apply/ links, so it was
+// invisible to deriveDeadlines above and never gated anything.
+export const cohortFromDecksHref = (href) =>
+  href?.match(/(^|\/)decks\/?\?[^#]*\bcohort=([a-z_]+)/)?.[2];
+
+// Deck visibility is a plain milestone date range (no approval-gated open,
+// unlike deriveDeadlines) — editing the row's date/end is meant to be the
+// only thing admins need to open or close mentor profiles publicly.
+export function deriveDeckWindows(milestones) {
+  const derived = {};
+  for (const m of milestones || []) {
+    const date = m.date;
+    for (const cell of m.cells || []) {
+      const role = cohortFromDecksHref(cell.href);
+      if (!role) continue;
+      const d = derived[role] || (derived[role] = {});
+      d.open = !d.open || date < d.open ? date : d.open;
+      d.close = !d.close || (m.end || date) > d.close ? (m.end || date) : d.close;
+    }
+  }
+  return derived;
+}
+
+// One shared selection window, not one per cohort, so this keys off the href
+// path rather than a cohort extractor like the two functions above. The
+// "Mentor Selection Deadline" row's date/end is the only thing admins need to
+// open or close mentee selection.
+export function deriveChoicesWindow(milestones) {
+  let window = null;
+  for (const m of milestones || []) {
+    const date = m.date;
+    for (const cell of m.cells || []) {
+      if (normalizeHref(cell.href) !== 'choices/') continue;
+      const w = window || (window = {});
+      w.open = !w.open || date < w.open ? date : w.open;
+      w.close = !w.close || (m.end || date) > w.close ? (m.end || date) : w.close;
+    }
+  }
+  return window;
 }
 
 function ordinal(n) {

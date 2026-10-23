@@ -241,7 +241,7 @@
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText } from '../js/banter.js';
+  import { SUPABASE_URL, ANON_KEY, renderTimeline, SAFE_HREF, todayET, deriveDeadlines, deriveDeckWindows, deriveChoicesWindow, cohortFromHref, FORM_LINKS, normalizeHref, resolveHref, textToFaq, faqToText } from '../js/banter.js';
 
   const sb = createClient(SUPABASE_URL, ANON_KEY);
   const CYCLE_KEY = 'banter_cycle';
@@ -419,6 +419,8 @@
       return;
     }
     cycle.deadlines = deriveDeadlines(cycle.milestones, latest.value.deadlines || {});
+    cycle.deckWindows = deriveDeckWindows(cycle.milestones);
+    cycle.choicesWindow = deriveChoicesWindow(cycle.milestones);
     const { data, error } = await sb.from('site_config')
       .update({ value: cycle, updated_at: new Date().toISOString() })
       .eq('key', CYCLE_KEY).select();
@@ -593,7 +595,7 @@
     // row that could keep the window in its current state — not just the last.
     linked.forEach((row, i) => edit(row, i === 0));
     cycle.milestones.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
-    const updated = { ...cycle, deadlines: deriveDeadlines(cycle.milestones, cycle.deadlines || {}) };
+    const updated = { ...cycle, deadlines: deriveDeadlines(cycle.milestones, cycle.deadlines || {}), deckWindows: deriveDeckWindows(cycle.milestones), choicesWindow: deriveChoicesWindow(cycle.milestones) };
     const { data, error } = await sb.from('site_config').update({ value: updated, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
     if (error || !data?.length) { status.textContent = `Could not save: ${error?.message || 'no config row was updated'}`; return; }
     status.textContent = '';
@@ -642,7 +644,7 @@
     if (data.value.deadlines?.[audience]?.open) return;
     const cycle = JSON.parse(JSON.stringify(data.value));
     const deadlines = { ...cycle.deadlines, [audience]: { ...cycle.deadlines?.[audience], open: todayET() } };
-    const { data: saved, error: writeError } = await sb.from('site_config').update({ value: { ...cycle, deadlines: deriveDeadlines(cycle.milestones, deadlines) }, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
+    const { data: saved, error: writeError } = await sb.from('site_config').update({ value: { ...cycle, deadlines: deriveDeadlines(cycle.milestones, deadlines), deckWindows: deriveDeckWindows(cycle.milestones), choicesWindow: deriveChoicesWindow(cycle.milestones) }, updated_at: new Date().toISOString() }).eq('key', CYCLE_KEY).select();
     if (writeError || !saved?.length) { status.textContent = `Could not save: ${writeError?.message || 'no config row was updated'}.`; return; }
     status.textContent = '';
     await loadCycleIntoEditor();
