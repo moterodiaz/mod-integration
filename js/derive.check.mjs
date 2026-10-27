@@ -129,4 +129,10 @@ assert.deepEqual(choicesWindow, { open: '2026-10-01', close: '2026-10-20' });
 assert.equal(deriveChoicesWindow([{ date: '2026-09-01', cells: [{ href: 'apply/?cohort=students' }] }]), null);
 assert.equal(deriveChoicesWindow([]), null);
 assert.ok(resolveHref('choices/?t=abc'));
+// github.io absolute hrefs normalize to site-relative paths
+assert.equal(normalizeHref('https://moterodiaz.github.io/mod-integration/decks/?cohort=students'), 'decks/?cohort=students');
+assert.deepEqual(
+  deriveChoicesWindow([{ date: '2026-10-26', end: '2026-10-30', cells: [{ href: 'https://moterodiaz.github.io/mod-integration/choices/' }] }]),
+  { open: '2026-10-26', close: '2026-10-30' },
+);
 console.log('deriveChoicesWindow checks passed');

@@ -34,7 +34,7 @@ export const SITE_ROOT = new URL('../', import.meta.url);
 export function normalizeHref(href) {
   if (!href) return href;
   const m = href.match(
-    /^(?:(?:https?:\/\/)?(?:www\.)?olinalumni\.org)?(?:\/resources\/banter)?\/?((apply|decks|choices)[/?][^#]*)(#.*)?$/
+    /^(?:(?:https?:\/\/)?(?:www\.)?olinalumni\.org|https?:\/\/moterodiaz\.github\.io\/mod-integration)?(?:\/resources\/banter)?\/?((apply|decks|choices)[/?][^#]*)(#.*)?$/
   );
   if (!m) return href;
   return m[1] + (m[3] || '');
