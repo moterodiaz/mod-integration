@@ -225,6 +225,16 @@
       <input id="filter-text" type="search" placeholder="name, email, major…">
       <button id="export-csv" type="button" class="secondary">Export CSV</button>
     </div>
+    <h3>Mentor selection</h3>
+    <p id="choices-status" role="status" aria-live="polite"></p>
+    <div class="table-responsive">
+      <table id="choices-table">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Cohort</th><th>Choices submitted</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p id="responses-status" role="status" aria-live="polite"></p>
     <div class="table-responsive responses-scroll">
       <table id="responses-table">
@@ -697,6 +707,27 @@
     return [r.name, r.email, r.major].some((v) => (v || '').toLowerCase().includes(text));
   }
 
+  function renderChoicesCompletion() {
+    const mentees = responses.filter((r) => r.cohort === 'students' || r.cohort === 'young_alums');
+    const tbody = document.querySelector('#choices-table tbody');
+    tbody.innerHTML = '';
+    let submitted = 0;
+    for (const r of mentees) {
+      const ts = r.raw?.['Choices submitted at'];
+      if (ts) submitted++;
+      const tr = document.createElement('tr');
+      const cells = [r.name, r.email, r.cohort, ts ? new Date(ts).toLocaleString() : 'Not submitted'];
+      for (const c of cells) {
+        const td = document.createElement('td');
+        td.textContent = c || '';
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    document.getElementById('choices-status').textContent =
+      `${submitted} of ${mentees.length} mentee${mentees.length === 1 ? '' : 's'} have submitted choices.`;
+  }
+
   function renderResponses() {
     const filtered = responses.filter(matchesFilter);
     const tbody = document.querySelector('#responses-table tbody');
@@ -770,6 +801,7 @@
     }
     responses = data;
     renderResponses();
+    renderChoicesCompletion();
   }
 
   // --- Pipeline dispatch (GitHub Actions, proxied through dispatch-workflow) -
