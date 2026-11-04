@@ -181,6 +181,7 @@
     </p>
     <p id="matching-pipeline-status" role="status" aria-live="polite"></p>
     <p id="matches-status" role="status" aria-live="polite"></p>
+    <p id="unmatched-status" role="status" aria-live="polite"></p>
     <div class="table-responsive">
       <table id="matches-table">
         <thead>
@@ -1091,6 +1092,7 @@
     matches = matchRows;
     matchPeople = Object.fromEntries((people || []).map((p) => [p.id, p]));
     renderMatches();
+    renderUnmatchedMentees();
   }
 
   function renderMatches() {
@@ -1113,6 +1115,18 @@
       tbody.appendChild(tr);
     }
     document.getElementById('matches-status').textContent = `${matches.length} match${matches.length === 1 ? '' : 'es'}.`;
+  }
+
+  function renderUnmatchedMentees() {
+    const menteeIds = new Set(
+      responses.filter((r) => r.cohort === 'students' || r.cohort === 'young_alums').map((r) => r.id)
+    );
+    const matchedIds = new Set(matches.map((m) => m.mentee));
+    const unmatched = responses.filter((r) => menteeIds.has(r.id) && !matchedIds.has(r.id));
+    const el = document.getElementById('unmatched-status');
+    el.textContent = unmatched.length
+      ? `${unmatched.length} mentee(s) unmatched: ${unmatched.map((r) => r.name).join(', ')}`
+      : 'All mentees matched.';
   }
 
   document.getElementById('generate-matches').addEventListener('click', async () => {
